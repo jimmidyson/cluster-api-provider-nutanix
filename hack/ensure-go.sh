@@ -31,7 +31,7 @@ EOF
   local go_version
   IFS=" " read -ra go_version <<< "$(go version)"
   local minimum_go_version
-  minimum_go_version=go1.18.3
+  minimum_go_version=go1.20
   if [[ "${minimum_go_version}" != $(echo -e "${minimum_go_version}\n${go_version[2]}" | sort -s -t. -k 1,1 -k 2,2n -k 3,3n | head -n1) && "${go_version[2]}" != "devel" ]]; then
     cat <<EOF
 Detected go version: ${go_version[*]}.
@@ -42,7 +42,23 @@ EOF
   fi
 }
 
+# ensure GOPATH/bin is in PATH as we may install binaries to that directory in
+# other ensure-* scripts, and expect them to be found in PATH later on
+verify_gopath_bin() {
+    local gopath_bin
+
+    gopath_bin="$(go env GOPATH)/bin"
+    if ! printenv PATH | grep -q "${gopath_bin}"; then
+        cat <<EOF
+error: \$GOPATH/bin=${gopath_bin} is not in your PATH.
+See https://go.dev/doc/gopath_code for more instructions.
+EOF
+        return 2
+    fi
+}
+
 verify_go_version
+verify_gopath_bin
 
 # Explicitly opt into go modules, even though we're inside a GOPATH directory
 export GO111MODULE=on
