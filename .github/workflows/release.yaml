@@ -30,15 +30,11 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: build template
-      run: |
-        pushd config/manager
-        devbox run -- kustomize edit set image controller=ghcr.io/${{ github.repository }}/controller:${{ github.ref_name }}
-        popd
-        devbox run -- make release-manifests
-
     - name: Release
-      run: devbox run -- make release
+      run: |
+        devbox run -- bash -ec "cd config/manager && kustomize edit set image controller=${KO_DOCKER_REPO}:${{ github.ref_name }}"
+        devbox run -- make release-manifests
+        devbox run -- make release
       env:
         KO_DOCKER_REPO: ghcr.io/${{ github.repository }}/controller
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
