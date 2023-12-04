@@ -54,13 +54,21 @@ func waitForState(errCh chan<- error, target string, refresh stateRefreshFunc) {
 	errCh <- err
 }
 
-func waitUntilTaskStateFunc(ctx context.Context, conn *nutanixClientV3.Client, uuid string) stateRefreshFunc {
+func waitUntilTaskStateFunc(
+	ctx context.Context,
+	conn *nutanixClientV3.Client,
+	uuid string,
+) stateRefreshFunc {
 	return func() (string, error) {
 		return GetTaskState(ctx, conn, uuid)
 	}
 }
 
-func GetTaskState(ctx context.Context, client *nutanixClientV3.Client, taskUUID string) (string, error) {
+func GetTaskState(
+	ctx context.Context,
+	client *nutanixClientV3.Client,
+	taskUUID string,
+) (string, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.V(1).Info(fmt.Sprintf("Getting task with UUID %s", taskUUID))
 	v, err := client.V3.GetTask(ctx, taskUUID)
@@ -71,7 +79,11 @@ func GetTaskState(ctx context.Context, client *nutanixClientV3.Client, taskUUID 
 
 	if *v.Status == "INVALID_UUID" || *v.Status == "FAILED" {
 		return *v.Status,
-			fmt.Errorf("error_detail: %s, progress_message: %s", utils.StringValue(v.ErrorDetail), utils.StringValue(v.ProgressMessage))
+			fmt.Errorf(
+				"error_detail: %s, progress_message: %s",
+				utils.StringValue(v.ErrorDetail),
+				utils.StringValue(v.ProgressMessage),
+			)
 	}
 	taskStatus := *v.Status
 	log.V(1).Info(fmt.Sprintf("Status for task with UUID %s: %s", taskUUID, taskStatus))
@@ -94,7 +106,12 @@ Intervals are in seconds.
 Returns an error if initial > max intervals, if retries are exhausted, or if the passed function returns
 an error.
 */
-func Retry(initialInterval float64, maxInterval float64, numTries uint, function RetryableFunc) error {
+func Retry(
+	initialInterval float64,
+	maxInterval float64,
+	numTries uint,
+	function RetryableFunc,
+) error {
 	if maxInterval == 0 {
 		maxInterval = math.Inf(1)
 	} else if initialInterval < 0 || initialInterval > maxInterval {

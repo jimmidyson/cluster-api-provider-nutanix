@@ -43,7 +43,9 @@ func TestNutanixMachineReconciler(t *testing.T) {
 				}
 
 				ctx := context.Background()
-				ntnxMachine := &infrav1.NutanixMachine{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"}}
+				ntnxMachine := &infrav1.NutanixMachine{
+					ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+				}
 				result, err := reconciler.Reconcile(ctx, ctrl.Request{
 					NamespacedName: client.ObjectKey{
 						Namespace: ntnxMachine.Namespace,

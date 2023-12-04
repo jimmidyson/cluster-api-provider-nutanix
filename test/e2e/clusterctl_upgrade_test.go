@@ -25,14 +25,18 @@ import (
 )
 
 // clusterctl upgrade test is being skipped. See 'GINKGO_SKIP' parameter in `Makefile`
-var _ = Describe("When testing clusterctl upgrades [clusterctl-Upgrade]", Label("clusterctl-upgrade", "slow", "network"), func() {
-	capi_e2e.ClusterctlUpgradeSpec(ctx, func() capi_e2e.ClusterctlUpgradeSpecInput {
-		return capi_e2e.ClusterctlUpgradeSpecInput{
-			E2EConfig:             e2eConfig,
-			ClusterctlConfigPath:  clusterctlConfigPath,
-			BootstrapClusterProxy: bootstrapClusterProxy,
-			ArtifactFolder:        artifactFolder,
-			SkipCleanup:           skipCleanup,
-		}
-	})
-})
+var _ = Describe(
+	"When testing clusterctl upgrades [clusterctl-Upgrade]",
+	Label("clusterctl-upgrade", "slow", "network"),
+	func() {
+		capi_e2e.ClusterctlUpgradeSpec(ctx, func() capi_e2e.ClusterctlUpgradeSpecInput {
+			return capi_e2e.ClusterctlUpgradeSpecInput{
+				E2EConfig:             e2eConfig,
+				ClusterctlConfigPath:  clusterctlConfigPath,
+				BootstrapClusterProxy: bootstrapClusterProxy,
+				ArtifactFolder:        artifactFolder,
+				SkipCleanup:           skipCleanup,
+			}
+		})
+	},
+)

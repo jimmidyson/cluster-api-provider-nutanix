@@ -71,7 +71,9 @@ func IsControlPlaneMachine(nma *infrav1.NutanixMachine) bool {
 }
 
 // GetNutanixMachinesInCluster gets a cluster's NutanixMachine resources.
-func (clctx *ClusterContext) GetNutanixMachinesInCluster(client ctlclient.Client) ([]*infrav1.NutanixMachine, error) {
+func (clctx *ClusterContext) GetNutanixMachinesInCluster(
+	client ctlclient.Client,
+) ([]*infrav1.NutanixMachine, error) {
 	clusterName := clctx.NutanixCluster.Name
 	clusterNamespace := clctx.NutanixCluster.Namespace
 	labels := map[string]string{capiv1.ClusterLabelName: clusterName}
@@ -91,21 +93,31 @@ func (clctx *ClusterContext) GetNutanixMachinesInCluster(client ctlclient.Client
 	return ntxMachines, nil
 }
 
-func (clctx *ClusterContext) SetFailureStatus(failureReason capierrors.ClusterStatusError, failureMessage error) {
+func (clctx *ClusterContext) SetFailureStatus(
+	failureReason capierrors.ClusterStatusError,
+	failureMessage error,
+) {
 	log := ctrl.LoggerFrom(clctx.Context)
 	log.Error(failureMessage, fmt.Sprintf("cluster failed: %s", failureReason))
 	clctx.NutanixCluster.Status.FailureMessage = utils.StringPtr(fmt.Sprintf("%v", failureMessage))
 	clctx.NutanixCluster.Status.FailureReason = &failureReason
 }
 
-func (clctx *MachineContext) SetFailureStatus(failureReason capierrors.MachineStatusError, failureMessage error) {
+func (clctx *MachineContext) SetFailureStatus(
+	failureReason capierrors.MachineStatusError,
+	failureMessage error,
+) {
 	log := ctrl.LoggerFrom(clctx.Context)
 	log.Error(failureMessage, fmt.Sprintf("machine failed: %s", failureReason))
 	clctx.NutanixMachine.Status.FailureMessage = utils.StringPtr(fmt.Sprintf("%v", failureMessage))
 	clctx.NutanixMachine.Status.FailureReason = &failureReason
 }
 
-func GetRemoteClient(ctx context.Context, client ctlclient.Client, clusterKey ctlclient.ObjectKey) (ctlclient.Client, error) {
+func GetRemoteClient(
+	ctx context.Context,
+	client ctlclient.Client,
+	clusterKey ctlclient.ObjectKey,
+) (ctlclient.Client, error) {
 	cacheLock.Lock()
 	defer cacheLock.Unlock()
 	remoteClient, ok := RemoteClientCache[clusterKey]

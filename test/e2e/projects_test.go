@@ -31,53 +31,120 @@ import (
 	infrav1 "github.com/nutanix-cloud-native/cluster-api-provider-nutanix/api/v1beta1"
 )
 
-var _ = Describe("Nutanix projects", Label("capx-feature-test", "projects", "slow", "network"), func() {
-	const (
-		specName               = "cluster-projects"
-		nonExistingProjectName = "nonExistingProjectNameCAPX"
-	)
+var _ = Describe(
+	"Nutanix projects",
+	Label("capx-feature-test", "projects", "slow", "network"),
+	func() {
+		const (
+			specName               = "cluster-projects"
+			nonExistingProjectName = "nonExistingProjectNameCAPX"
+		)
 
-	var (
-		namespace          *corev1.Namespace
-		clusterName        string
-		clusterResources   *clusterctl.ApplyClusterTemplateAndWaitResult
-		cancelWatches      context.CancelFunc
-		nutanixProjectName string
-		testHelper         testHelperInterface
-	)
+		var (
+			namespace          *corev1.Namespace
+			clusterName        string
+			clusterResources   *clusterctl.ApplyClusterTemplateAndWaitResult
+			cancelWatches      context.CancelFunc
+			nutanixProjectName string
+			testHelper         testHelperInterface
+		)
 
-	BeforeEach(func() {
-		testHelper = newTestHelper(e2eConfig)
-		nutanixProjectName = testHelper.getVariableFromE2eConfig(nutanixProjectNameEnv)
-		clusterName = testHelper.generateTestClusterName(specName)
-		clusterResources = new(clusterctl.ApplyClusterTemplateAndWaitResult)
-		Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
-		namespace, cancelWatches = setupSpecNamespace(ctx, specName, bootstrapClusterProxy, artifactFolder)
-	})
-
-	AfterEach(func() {
-		dumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, artifactFolder, namespace, cancelWatches, clusterResources.Cluster, e2eConfig.GetIntervals, skipCleanup)
-	})
-
-	It("Create a cluster linked to non-existing project (should fail)", func() {
-		const flavor = "no-nmt"
-
-		Expect(namespace).NotTo(BeNil())
-
-		By("Creating invalid Project Nutanix Machine Template", func() {
-			invalidProjectNMT := testHelper.createDefaultNMT(clusterName, namespace.Name)
-			invalidProjectNMT.Spec.Template.Spec.Project = &infrav1.NutanixResourceIdentifier{
-				Type: "name",
-				Name: pointer.StringPtr(nonExistingProjectName),
-			}
-			testHelper.createCapiObject(ctx, createCapiObjectParams{
-				creator:    bootstrapClusterProxy.GetClient(),
-				capiObject: invalidProjectNMT,
-			})
+		BeforeEach(func() {
+			testHelper = newTestHelper(e2eConfig)
+			nutanixProjectName = testHelper.getVariableFromE2eConfig(nutanixProjectNameEnv)
+			clusterName = testHelper.generateTestClusterName(specName)
+			clusterResources = new(clusterctl.ApplyClusterTemplateAndWaitResult)
+			Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
+			namespace, cancelWatches = setupSpecNamespace(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
+			)
 		})
 
-		By("Creating a workload cluster", func() {
-			testHelper.deployCluster(
+		AfterEach(func() {
+			dumpSpecResourcesAndCleanup(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
+				namespace,
+				cancelWatches,
+				clusterResources.Cluster,
+				e2eConfig.GetIntervals,
+				skipCleanup,
+			)
+		})
+
+		It("Create a cluster linked to non-existing project (should fail)", func() {
+			const flavor = "no-nmt"
+
+			Expect(namespace).NotTo(BeNil())
+
+			By("Creating invalid Project Nutanix Machine Template", func() {
+				invalidProjectNMT := testHelper.createDefaultNMT(clusterName, namespace.Name)
+				invalidProjectNMT.Spec.Template.Spec.Project = &infrav1.NutanixResourceIdentifier{
+					Type: "name",
+					Name: pointer.StringPtr(nonExistingProjectName),
+				}
+				testHelper.createCapiObject(ctx, createCapiObjectParams{
+					creator:    bootstrapClusterProxy.GetClient(),
+					capiObject: invalidProjectNMT,
+				})
+			})
+
+			By("Creating a workload cluster", func() {
+				testHelper.deployCluster(
+					deployClusterParams{
+						clusterName:           clusterName,
+						namespace:             namespace,
+						flavor:                flavor,
+						clusterctlConfigPath:  clusterctlConfigPath,
+						artifactFolder:        artifactFolder,
+						bootstrapClusterProxy: bootstrapClusterProxy,
+					},
+					clusterResources,
+				)
+			})
+
+			By("Checking project assigned condition is false", func() {
+				testHelper.verifyConditionOnNutanixMachines(verifyConditionParams{
+					clusterName:           clusterName,
+					namespace:             namespace,
+					bootstrapClusterProxy: bootstrapClusterProxy,
+					expectedCondition: clusterv1.Condition{
+						Type:     infrav1.ProjectAssignedCondition,
+						Reason:   infrav1.ProjectAssignationFailed,
+						Severity: clusterv1.ConditionSeverityError,
+						Status:   corev1.ConditionFalse,
+					},
+				})
+			})
+
+			By("Checking machine status is 'Failed' and failure message is set", func() {
+				testHelper.verifyFailureMessageOnClusterMachines(
+					ctx,
+					verifyFailureMessageOnClusterMachinesParams{
+						clusterName:            clusterName,
+						namespace:              namespace,
+						expectedPhase:          "Failed",
+						expectedFailureMessage: "failed to retrieve project",
+						bootstrapClusterProxy:  bootstrapClusterProxy,
+					},
+				)
+			})
+
+			By("PASSED!")
+		})
+
+		It("Create a cluster linked to an existing project", func() {
+			flavor = "project"
+
+			Expect(namespace).NotTo(BeNil())
+
+			By("Creating a workload cluster")
+			testHelper.deployClusterAndWait(
 				deployClusterParams{
 					clusterName:           clusterName,
 					namespace:             namespace,
@@ -85,122 +152,77 @@ var _ = Describe("Nutanix projects", Label("capx-feature-test", "projects", "slo
 					clusterctlConfigPath:  clusterctlConfigPath,
 					artifactFolder:        artifactFolder,
 					bootstrapClusterProxy: bootstrapClusterProxy,
-				},
-				clusterResources,
-			)
-		})
+				}, clusterResources)
 
-		By("Checking project assigned condition is false", func() {
-			testHelper.verifyConditionOnNutanixMachines(verifyConditionParams{
-				clusterName:           clusterName,
-				namespace:             namespace,
-				bootstrapClusterProxy: bootstrapClusterProxy,
-				expectedCondition: clusterv1.Condition{
-					Type:     infrav1.ProjectAssignedCondition,
-					Reason:   infrav1.ProjectAssignationFailed,
-					Severity: clusterv1.ConditionSeverityError,
-					Status:   corev1.ConditionFalse,
-				},
+			By("Checking project assigned condition is true", func() {
+				testHelper.verifyConditionOnNutanixMachines(verifyConditionParams{
+					clusterName:           clusterName,
+					namespace:             namespace,
+					bootstrapClusterProxy: bootstrapClusterProxy,
+					expectedCondition: clusterv1.Condition{
+						Type:   infrav1.ProjectAssignedCondition,
+						Status: corev1.ConditionTrue,
+					},
+				})
 			})
-		})
 
-		By("Checking machine status is 'Failed' and failure message is set", func() {
-			testHelper.verifyFailureMessageOnClusterMachines(ctx, verifyFailureMessageOnClusterMachinesParams{
-				clusterName:            clusterName,
-				namespace:              namespace,
-				expectedPhase:          "Failed",
-				expectedFailureMessage: "failed to retrieve project",
-				bootstrapClusterProxy:  bootstrapClusterProxy,
-			})
-		})
-
-		By("PASSED!")
-	})
-
-	It("Create a cluster linked to an existing project", func() {
-		flavor = "project"
-
-		Expect(namespace).NotTo(BeNil())
-
-		By("Creating a workload cluster")
-		testHelper.deployClusterAndWait(
-			deployClusterParams{
+			By("Verifying if project is assigned to the VMs")
+			Expect(nutanixProjectName).ToNot(BeEmpty())
+			testHelper.verifyProjectNutanixMachines(ctx, verifyProjectNutanixMachinesParams{
 				clusterName:           clusterName,
-				namespace:             namespace,
-				flavor:                flavor,
-				clusterctlConfigPath:  clusterctlConfigPath,
-				artifactFolder:        artifactFolder,
+				namespace:             namespace.Name,
+				nutanixProjectName:    nutanixProjectName,
 				bootstrapClusterProxy: bootstrapClusterProxy,
-			}, clusterResources)
-
-		By("Checking project assigned condition is true", func() {
-			testHelper.verifyConditionOnNutanixMachines(verifyConditionParams{
-				clusterName:           clusterName,
-				namespace:             namespace,
-				bootstrapClusterProxy: bootstrapClusterProxy,
-				expectedCondition: clusterv1.Condition{
-					Type:   infrav1.ProjectAssignedCondition,
-					Status: corev1.ConditionTrue,
-				},
 			})
+
+			By("PASSED!")
 		})
 
-		By("Verifying if project is assigned to the VMs")
-		Expect(nutanixProjectName).ToNot(BeEmpty())
-		testHelper.verifyProjectNutanixMachines(ctx, verifyProjectNutanixMachinesParams{
-			clusterName:           clusterName,
-			namespace:             namespace.Name,
-			nutanixProjectName:    nutanixProjectName,
-			bootstrapClusterProxy: bootstrapClusterProxy,
-		})
+		It("Create a cluster linked to an existing project by UUID", Label("uuid"), func() {
+			flavor = "no-nmt"
+			Expect(namespace).NotTo(BeNil())
 
-		By("PASSED!")
-	})
-
-	It("Create a cluster linked to an existing project by UUID", Label("uuid"), func() {
-		flavor = "no-nmt"
-		Expect(namespace).NotTo(BeNil())
-
-		By("Creating Nutanix Machine Template with UUIDs", func() {
-			uuidNMT := testHelper.createUUIDProjectNMT(ctx, clusterName, namespace.Name)
-			testHelper.createCapiObject(ctx, createCapiObjectParams{
-				creator:    bootstrapClusterProxy.GetClient(),
-				capiObject: uuidNMT,
+			By("Creating Nutanix Machine Template with UUIDs", func() {
+				uuidNMT := testHelper.createUUIDProjectNMT(ctx, clusterName, namespace.Name)
+				testHelper.createCapiObject(ctx, createCapiObjectParams{
+					creator:    bootstrapClusterProxy.GetClient(),
+					capiObject: uuidNMT,
+				})
 			})
-		})
 
-		By("Creating a workload cluster linked to a project")
-		testHelper.deployClusterAndWait(
-			deployClusterParams{
-				clusterName:           clusterName,
-				namespace:             namespace,
-				flavor:                flavor,
-				clusterctlConfigPath:  clusterctlConfigPath,
-				artifactFolder:        artifactFolder,
-				bootstrapClusterProxy: bootstrapClusterProxy,
-			}, clusterResources)
+			By("Creating a workload cluster linked to a project")
+			testHelper.deployClusterAndWait(
+				deployClusterParams{
+					clusterName:           clusterName,
+					namespace:             namespace,
+					flavor:                flavor,
+					clusterctlConfigPath:  clusterctlConfigPath,
+					artifactFolder:        artifactFolder,
+					bootstrapClusterProxy: bootstrapClusterProxy,
+				}, clusterResources)
 
-		By("Checking project assigned condition is true", func() {
-			testHelper.verifyConditionOnNutanixMachines(verifyConditionParams{
-				clusterName:           clusterName,
-				namespace:             namespace,
-				bootstrapClusterProxy: bootstrapClusterProxy,
-				expectedCondition: clusterv1.Condition{
-					Type:   infrav1.ProjectAssignedCondition,
-					Status: corev1.ConditionTrue,
-				},
+			By("Checking project assigned condition is true", func() {
+				testHelper.verifyConditionOnNutanixMachines(verifyConditionParams{
+					clusterName:           clusterName,
+					namespace:             namespace,
+					bootstrapClusterProxy: bootstrapClusterProxy,
+					expectedCondition: clusterv1.Condition{
+						Type:   infrav1.ProjectAssignedCondition,
+						Status: corev1.ConditionTrue,
+					},
+				})
 			})
-		})
 
-		By("Verifying if project is assigned to the VMs")
-		Expect(nutanixProjectName).ToNot(BeEmpty())
-		testHelper.verifyProjectNutanixMachines(ctx, verifyProjectNutanixMachinesParams{
-			clusterName:           clusterName,
-			namespace:             namespace.Name,
-			nutanixProjectName:    nutanixProjectName,
-			bootstrapClusterProxy: bootstrapClusterProxy,
-		})
+			By("Verifying if project is assigned to the VMs")
+			Expect(nutanixProjectName).ToNot(BeEmpty())
+			testHelper.verifyProjectNutanixMachines(ctx, verifyProjectNutanixMachinesParams{
+				clusterName:           clusterName,
+				namespace:             namespace.Name,
+				nutanixProjectName:    nutanixProjectName,
+				bootstrapClusterProxy: bootstrapClusterProxy,
+			})
 
-		By("PASSED!")
-	})
-})
+			By("PASSED!")
+		})
+	},
+)

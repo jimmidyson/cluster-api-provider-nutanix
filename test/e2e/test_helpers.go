@@ -118,36 +118,88 @@ var (
 )
 
 type testHelperInterface interface {
-	createClusterFromConfig(ctx context.Context, input clusterctl.ApplyClusterTemplateAndWaitInput, result *clusterctl.ApplyClusterTemplateAndWaitResult)
+	createClusterFromConfig(
+		ctx context.Context,
+		input clusterctl.ApplyClusterTemplateAndWaitInput,
+		result *clusterctl.ApplyClusterTemplateAndWaitResult,
+	)
 	createDefaultNMT(clusterName, namespace string) *infrav1.NutanixMachineTemplate
-	createDefaultNutanixCluster(clusterName, namespace, controlPlaneEndpointIP string, controlPlanePort int32) *infrav1.NutanixCluster
-	createNameGPUNMT(ctx context.Context, clusterName, namespace string, params createGPUNMTParams) *infrav1.NutanixMachineTemplate
+	createDefaultNutanixCluster(
+		clusterName, namespace, controlPlaneEndpointIP string,
+		controlPlanePort int32,
+	) *infrav1.NutanixCluster
+	createNameGPUNMT(
+		ctx context.Context,
+		clusterName, namespace string,
+		params createGPUNMTParams,
+	) *infrav1.NutanixMachineTemplate
 	createCapiObject(ctx context.Context, params createCapiObjectParams)
-	createDeviceIDGPUNMT(ctx context.Context, clusterName, namespace string, params createGPUNMTParams) *infrav1.NutanixMachineTemplate
+	createDeviceIDGPUNMT(
+		ctx context.Context,
+		clusterName, namespace string,
+		params createGPUNMTParams,
+	) *infrav1.NutanixMachineTemplate
 	createSecret(params createSecretParams)
-	createUUIDNMT(ctx context.Context, clusterName, namespace string) *infrav1.NutanixMachineTemplate
-	createUUIDProjectNMT(ctx context.Context, clusterName, namespace string) *infrav1.NutanixMachineTemplate
-	deployCluster(params deployClusterParams, clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult)
-	deployClusterAndWait(params deployClusterParams, clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult)
+	createUUIDNMT(
+		ctx context.Context,
+		clusterName, namespace string,
+	) *infrav1.NutanixMachineTemplate
+	createUUIDProjectNMT(
+		ctx context.Context,
+		clusterName, namespace string,
+	) *infrav1.NutanixMachineTemplate
+	deployCluster(
+		params deployClusterParams,
+		clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult,
+	)
+	deployClusterAndWait(
+		params deployClusterParams,
+		clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult,
+	)
 	deleteSecret(params deleteSecretParams)
 	findGPU(ctx context.Context, gpuName string) *prismGoClientV3.GPU
 	generateNMTName(clusterName string) string
 	generateNMTProviderID(clusterName string) string
 	generateTestClusterName(specName string) string
-	getMachinesForCluster(ctx context.Context, clusterName, namespace string, bootstrapClusterProxy framework.ClusterProxy) *clusterv1.MachineList
-	getNutanixMachineForCluster(ctx context.Context, clusterName, namespace, machineName string, bootstrapClusterProxy framework.ClusterProxy) *infrav1.NutanixMachine
-	getNutanixMachinesForCluster(ctx context.Context, clusterName, namespace string, bootstrapClusterProxy framework.ClusterProxy) *infrav1.NutanixMachineList
-	getNutanixClusterByName(ctx context.Context, input getNutanixClusterByNameInput) *infrav1.NutanixCluster
-	getNutanixVMsForCluster(ctx context.Context, clusterName, namespace string) []*prismGoClientV3.VMIntentResponse
+	getMachinesForCluster(
+		ctx context.Context,
+		clusterName, namespace string,
+		bootstrapClusterProxy framework.ClusterProxy,
+	) *clusterv1.MachineList
+	getNutanixMachineForCluster(
+		ctx context.Context,
+		clusterName, namespace, machineName string,
+		bootstrapClusterProxy framework.ClusterProxy,
+	) *infrav1.NutanixMachine
+	getNutanixMachinesForCluster(
+		ctx context.Context,
+		clusterName, namespace string,
+		bootstrapClusterProxy framework.ClusterProxy,
+	) *infrav1.NutanixMachineList
+	getNutanixClusterByName(
+		ctx context.Context,
+		input getNutanixClusterByNameInput,
+	) *infrav1.NutanixCluster
+	getNutanixVMsForCluster(
+		ctx context.Context,
+		clusterName, namespace string,
+	) []*prismGoClientV3.VMIntentResponse
 	getNutanixResourceIdentifierFromEnv(envVarKey string) infrav1.NutanixResourceIdentifier
 	getNutanixResourceIdentifierFromE2eConfig(variableKey string) infrav1.NutanixResourceIdentifier
 	getVariableFromE2eConfig(variableKey string) string
 	stripNutanixIDFromProviderID(providerID string) string
 	verifyCategoryExists(ctx context.Context, categoryKey, categoyValue string)
-	verifyCategoriesNutanixMachines(ctx context.Context, clusterName, namespace string, expectedCategories map[string]string)
+	verifyCategoriesNutanixMachines(
+		ctx context.Context,
+		clusterName, namespace string,
+		expectedCategories map[string]string,
+	)
 	verifyConditionOnNutanixCluster(params verifyConditionParams)
 	verifyConditionOnNutanixMachines(params verifyConditionParams)
-	verifyFailureMessageOnClusterMachines(ctx context.Context, params verifyFailureMessageOnClusterMachinesParams)
+	verifyFailureMessageOnClusterMachines(
+		ctx context.Context,
+		params verifyFailureMessageOnClusterMachinesParams,
+	)
 	verifyGPUNutanixMachines(ctx context.Context, params verifyGPUNutanixMachinesParams)
 	verifyProjectNutanixMachines(ctx context.Context, params verifyProjectNutanixMachinesParams)
 }
@@ -167,10 +219,18 @@ func newTestHelper(e2eConfig *clusterctl.E2EConfig) testHelperInterface {
 	}
 }
 
-func (t testHelper) createClusterFromConfig(ctx context.Context, input clusterctl.ApplyClusterTemplateAndWaitInput, result *clusterctl.ApplyClusterTemplateAndWaitResult) {
+func (t testHelper) createClusterFromConfig(
+	ctx context.Context,
+	input clusterctl.ApplyClusterTemplateAndWaitInput,
+	result *clusterctl.ApplyClusterTemplateAndWaitResult,
+) {
 	Expect(ctx).NotTo(BeNil(), "ctx is required for createClusterFromConfig")
-	Expect(input.ClusterProxy).ToNot(BeNil(), "Invalid argument. input.ClusterProxy can't be nil when calling createClusterFromConfig")
-	Expect(result).ToNot(BeNil(), "Invalid argument. result can't be nil when calling createClusterFromConfig")
+	Expect(
+		input.ClusterProxy,
+	).ToNot(BeNil(), "Invalid argument. input.ClusterProxy can't be nil when calling createClusterFromConfig")
+	Expect(
+		result,
+	).ToNot(BeNil(), "Invalid argument. result can't be nil when calling createClusterFromConfig")
 	Expect(input.ConfigCluster.ControlPlaneMachineCount).ToNot(BeNil())
 	Expect(input.ConfigCluster.WorkerMachineCount).ToNot(BeNil())
 
@@ -198,7 +258,9 @@ func (t testHelper) createClusterFromConfig(ctx context.Context, input clusterct
 	Expect(result.Cluster).ToNot(BeNil())
 }
 
-func (t testHelper) createDefaultNMT(clusterName, namespace string) *infrav1.NutanixMachineTemplate {
+func (t testHelper) createDefaultNMT(
+	clusterName, namespace string,
+) *infrav1.NutanixMachineTemplate {
 	return &infrav1.NutanixMachineTemplate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      t.generateNMTName(clusterName),
@@ -224,7 +286,10 @@ func (t testHelper) createDefaultNMT(clusterName, namespace string) *infrav1.Nut
 	}
 }
 
-func (t testHelper) createUUIDNMT(ctx context.Context, clusterName, namespace string) *infrav1.NutanixMachineTemplate {
+func (t testHelper) createUUIDNMT(
+	ctx context.Context,
+	clusterName, namespace string,
+) *infrav1.NutanixMachineTemplate {
 	imageVarValue := t.getVariableFromE2eConfig(imageVarKey)
 	clusterVarValue := t.getVariableFromE2eConfig(clusterVarKey)
 	subnetVarValue := t.getVariableFromE2eConfig(subnetVarKey)
@@ -235,7 +300,13 @@ func (t testHelper) createUUIDNMT(ctx context.Context, clusterName, namespace st
 	imageUUID, err := controllers.GetImageUUID(ctx, t.nutanixClient, &imageVarValue, nil)
 	Expect(err).ToNot(HaveOccurred())
 
-	subnetUUID, err := controllers.GetSubnetUUID(ctx, t.nutanixClient, clusterUUID, &subnetVarValue, nil)
+	subnetUUID, err := controllers.GetSubnetUUID(
+		ctx,
+		t.nutanixClient,
+		clusterUUID,
+		&subnetVarValue,
+		nil,
+	)
 	Expect(err).ToNot(HaveOccurred())
 
 	return &infrav1.NutanixMachineTemplate{
@@ -272,7 +343,10 @@ func (t testHelper) createUUIDNMT(ctx context.Context, clusterName, namespace st
 	}
 }
 
-func (t testHelper) createUUIDProjectNMT(ctx context.Context, clusterName, namespace string) *infrav1.NutanixMachineTemplate {
+func (t testHelper) createUUIDProjectNMT(
+	ctx context.Context,
+	clusterName, namespace string,
+) *infrav1.NutanixMachineTemplate {
 	projectVarValue := t.getVariableFromE2eConfig(nutanixProjectNameEnv)
 	projectUUID, err := controllers.GetProjectUUID(ctx, t.nutanixClient, &projectVarValue, nil)
 	Expect(err).ToNot(HaveOccurred())
@@ -290,7 +364,11 @@ type createGPUNMTParams struct {
 	gpuNameEnvKey   string
 }
 
-func (t testHelper) createNameGPUNMT(ctx context.Context, clusterName, namespace string, params createGPUNMTParams) *infrav1.NutanixMachineTemplate {
+func (t testHelper) createNameGPUNMT(
+	ctx context.Context,
+	clusterName, namespace string,
+	params createGPUNMTParams,
+) *infrav1.NutanixMachineTemplate {
 	gpuName := t.getVariableFromE2eConfig(params.gpuNameEnvKey)
 	_ = t.getVariableFromE2eConfig(params.gpuVendorEnvKey)
 
@@ -325,7 +403,11 @@ func (t testHelper) findGPU(ctx context.Context, gpuName string) *prismGoClientV
 	return nil
 }
 
-func (t testHelper) createDeviceIDGPUNMT(ctx context.Context, clusterName, namespace string, params createGPUNMTParams) *infrav1.NutanixMachineTemplate {
+func (t testHelper) createDeviceIDGPUNMT(
+	ctx context.Context,
+	clusterName, namespace string,
+	params createGPUNMTParams,
+) *infrav1.NutanixMachineTemplate {
 	gpuName := t.getVariableFromE2eConfig(params.gpuNameEnvKey)
 	foundGpu := t.findGPU(ctx, gpuName)
 	Expect(foundGpu).ToNot(BeNil())
@@ -340,7 +422,10 @@ func (t testHelper) createDeviceIDGPUNMT(ctx context.Context, clusterName, names
 	return nmt
 }
 
-func (t testHelper) createDefaultNutanixCluster(clusterName, namespace, controlPlaneEndpointIP string, controlPlanePort int32) *infrav1.NutanixCluster {
+func (t testHelper) createDefaultNutanixCluster(
+	clusterName, namespace, controlPlaneEndpointIP string,
+	controlPlanePort int32,
+) *infrav1.NutanixCluster {
 	return &infrav1.NutanixCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      clusterName,
@@ -415,9 +500,16 @@ type deployClusterParams struct {
 	bootstrapClusterProxy framework.ClusterProxy
 }
 
-func (t testHelper) deployCluster(params deployClusterParams, clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult) {
+func (t testHelper) deployCluster(
+	params deployClusterParams,
+	clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult,
+) {
 	cc := clusterctl.ConfigClusterInput{
-		LogFolder:                filepath.Join(params.artifactFolder, "clusters", params.bootstrapClusterProxy.GetName()),
+		LogFolder: filepath.Join(
+			params.artifactFolder,
+			"clusters",
+			params.bootstrapClusterProxy.GetName(),
+		),
 		ClusterctlConfigPath:     params.clusterctlConfigPath,
 		KubeconfigPath:           params.bootstrapClusterProxy.GetKubeconfigPath(),
 		InfrastructureProvider:   clusterctl.DefaultInfrastructureProvider,
@@ -438,9 +530,16 @@ func (t testHelper) deployCluster(params deployClusterParams, clusterResources *
 	}, clusterResources)
 }
 
-func (t testHelper) deployClusterAndWait(params deployClusterParams, clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult) {
+func (t testHelper) deployClusterAndWait(
+	params deployClusterParams,
+	clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult,
+) {
 	cc := clusterctl.ConfigClusterInput{
-		LogFolder:                filepath.Join(params.artifactFolder, "clusters", params.bootstrapClusterProxy.GetName()),
+		LogFolder: filepath.Join(
+			params.artifactFolder,
+			"clusters",
+			params.bootstrapClusterProxy.GetName(),
+		),
 		ClusterctlConfigPath:     params.clusterctlConfigPath,
 		KubeconfigPath:           params.bootstrapClusterProxy.GetKubeconfigPath(),
 		InfrastructureProvider:   clusterctl.DefaultInfrastructureProvider,
@@ -479,25 +578,39 @@ type getNutanixClusterByNameInput struct {
 	Namespace string
 }
 
-func (t testHelper) getNutanixClusterByName(ctx context.Context, input getNutanixClusterByNameInput) *infrav1.NutanixCluster {
+func (t testHelper) getNutanixClusterByName(
+	ctx context.Context,
+	input getNutanixClusterByNameInput,
+) *infrav1.NutanixCluster {
 	cluster := &infrav1.NutanixCluster{}
 	key := client.ObjectKey{
 		Namespace: input.Namespace,
 		Name:      input.Name,
 	}
-	Expect(input.Getter.Get(ctx, key, cluster)).To(Succeed(), "Failed to get Nutanix Cluster object %s/%s", input.Namespace, input.Name)
+	Expect(
+		input.Getter.Get(ctx, key, cluster),
+	).To(Succeed(), "Failed to get Nutanix Cluster object %s/%s", input.Namespace, input.Name)
 	return cluster
 }
 
-func (t testHelper) getMachinesForCluster(ctx context.Context, clusterName, namespace string, bootstrapClusterProxy framework.ClusterProxy) *clusterv1.MachineList {
+func (t testHelper) getMachinesForCluster(
+	ctx context.Context,
+	clusterName, namespace string,
+	bootstrapClusterProxy framework.ClusterProxy,
+) *clusterv1.MachineList {
 	machineList := &clusterv1.MachineList{}
 	labels := map[string]string{clusterv1.ClusterLabelName: clusterName}
-	err := bootstrapClusterProxy.GetClient().List(ctx, machineList, client.InNamespace(namespace), client.MatchingLabels(labels))
+	err := bootstrapClusterProxy.GetClient().
+		List(ctx, machineList, client.InNamespace(namespace), client.MatchingLabels(labels))
 	Expect(err).ShouldNot(HaveOccurred())
 	return machineList
 }
 
-func (t testHelper) getNutanixMachineForCluster(ctx context.Context, clusterName, namespace, machineName string, bootstrapClusterProxy framework.ClusterProxy) *infrav1.NutanixMachine {
+func (t testHelper) getNutanixMachineForCluster(
+	ctx context.Context,
+	clusterName, namespace, machineName string,
+	bootstrapClusterProxy framework.ClusterProxy,
+) *infrav1.NutanixMachine {
 	machine := &infrav1.NutanixMachine{}
 
 	machineKey := client.ObjectKey{
@@ -509,15 +622,23 @@ func (t testHelper) getNutanixMachineForCluster(ctx context.Context, clusterName
 	return machine
 }
 
-func (t testHelper) getNutanixMachinesForCluster(ctx context.Context, clusterName, namespace string, bootstrapClusterProxy framework.ClusterProxy) *infrav1.NutanixMachineList {
+func (t testHelper) getNutanixMachinesForCluster(
+	ctx context.Context,
+	clusterName, namespace string,
+	bootstrapClusterProxy framework.ClusterProxy,
+) *infrav1.NutanixMachineList {
 	machineList := &infrav1.NutanixMachineList{}
 	labels := map[string]string{clusterv1.ClusterLabelName: clusterName}
-	err := bootstrapClusterProxy.GetClient().List(ctx, machineList, client.InNamespace(namespace), client.MatchingLabels(labels))
+	err := bootstrapClusterProxy.GetClient().
+		List(ctx, machineList, client.InNamespace(namespace), client.MatchingLabels(labels))
 	Expect(err).ShouldNot(HaveOccurred())
 	return machineList
 }
 
-func (t testHelper) getNutanixVMsForCluster(ctx context.Context, clusterName, namespace string) []*prismGoClientV3.VMIntentResponse {
+func (t testHelper) getNutanixVMsForCluster(
+	ctx context.Context,
+	clusterName, namespace string,
+) []*prismGoClientV3.VMIntentResponse {
 	nutanixMachines := t.getMachinesForCluster(ctx, clusterName, namespace, bootstrapClusterProxy)
 	vms := make([]*prismGoClientV3.VMIntentResponse, 0)
 	for _, m := range nutanixMachines.Items {
@@ -531,7 +652,9 @@ func (t testHelper) getNutanixVMsForCluster(ctx context.Context, clusterName, na
 	return vms
 }
 
-func (t testHelper) getNutanixResourceIdentifierFromEnv(envVarKey string) infrav1.NutanixResourceIdentifier {
+func (t testHelper) getNutanixResourceIdentifierFromEnv(
+	envVarKey string,
+) infrav1.NutanixResourceIdentifier {
 	envVarValue := os.Getenv(envVarKey)
 	Expect(envVarValue).ToNot(BeEmpty(), "expected environment variable %s to be set", envVarKey)
 	return infrav1.NutanixResourceIdentifier{
@@ -540,7 +663,9 @@ func (t testHelper) getNutanixResourceIdentifierFromEnv(envVarKey string) infrav
 	}
 }
 
-func (t testHelper) getNutanixResourceIdentifierFromE2eConfig(variableKey string) infrav1.NutanixResourceIdentifier {
+func (t testHelper) getNutanixResourceIdentifierFromE2eConfig(
+	variableKey string,
+) infrav1.NutanixResourceIdentifier {
 	variableValue := t.getVariableFromE2eConfig(variableKey)
 	return infrav1.NutanixResourceIdentifier{
 		Type: nameType,
@@ -549,7 +674,9 @@ func (t testHelper) getNutanixResourceIdentifierFromE2eConfig(variableKey string
 }
 
 func (t testHelper) getVariableFromE2eConfig(variableKey string) string {
-	Expect(t.e2eConfig.HasVariable(variableKey)).To(BeTrue(), "expected e2econfig variable %s to exist", variableKey)
+	Expect(
+		t.e2eConfig.HasVariable(variableKey),
+	).To(BeTrue(), "expected e2econfig variable %s to exist", variableKey)
 	variableValue := t.e2eConfig.GetVariable(variableKey)
 	Expect(variableValue).ToNot(BeEmpty(), "expected e2econfig variable %s to be set", variableKey)
 	return variableValue
@@ -564,7 +691,11 @@ func (t testHelper) verifyCategoryExists(ctx context.Context, categoryKey, categ
 	Expect(err).ShouldNot(HaveOccurred())
 }
 
-func (t testHelper) verifyCategoriesNutanixMachines(ctx context.Context, clusterName, namespace string, expectedCategories map[string]string) {
+func (t testHelper) verifyCategoriesNutanixMachines(
+	ctx context.Context,
+	clusterName, namespace string,
+	expectedCategories map[string]string,
+) {
 	nutanixMachines := t.getMachinesForCluster(ctx, clusterName, namespace, bootstrapClusterProxy)
 	for _, m := range nutanixMachines.Items {
 		machineProviderID := m.Spec.ProviderID
@@ -616,7 +747,12 @@ func (t testHelper) verifyConditionOnNutanixCluster(params verifyConditionParams
 func (t testHelper) verifyConditionOnNutanixMachines(params verifyConditionParams) {
 	Eventually(
 		func() []infrav1.NutanixMachine {
-			nutanixMachines := t.getNutanixMachinesForCluster(ctx, params.clusterName, params.namespace.Name, params.bootstrapClusterProxy)
+			nutanixMachines := t.getNutanixMachinesForCluster(
+				ctx,
+				params.clusterName,
+				params.namespace.Name,
+				params.bootstrapClusterProxy,
+			)
 			return nutanixMachines.Items
 		},
 		defaultTimeout,
@@ -656,12 +792,21 @@ type verifyFailureMessageOnClusterMachinesParams struct {
 	bootstrapClusterProxy  framework.ClusterProxy
 }
 
-func (t testHelper) verifyFailureMessageOnClusterMachines(ctx context.Context, params verifyFailureMessageOnClusterMachinesParams) {
+func (t testHelper) verifyFailureMessageOnClusterMachines(
+	ctx context.Context,
+	params verifyFailureMessageOnClusterMachinesParams,
+) {
 	Eventually(func() bool {
-		nutanixMachines := t.getMachinesForCluster(ctx, params.clusterName, params.namespace.Name, params.bootstrapClusterProxy)
+		nutanixMachines := t.getMachinesForCluster(
+			ctx,
+			params.clusterName,
+			params.namespace.Name,
+			params.bootstrapClusterProxy,
+		)
 		for _, m := range nutanixMachines.Items {
 			machineStatus := m.Status
-			if machineStatus.Phase == params.expectedPhase && strings.Contains(*machineStatus.FailureMessage, params.expectedFailureMessage) {
+			if machineStatus.Phase == params.expectedPhase &&
+				strings.Contains(*machineStatus.FailureMessage, params.expectedFailureMessage) {
 				return true
 			}
 		}
@@ -676,8 +821,16 @@ type verifyProjectNutanixMachinesParams struct {
 	bootstrapClusterProxy framework.ClusterProxy
 }
 
-func (t testHelper) verifyProjectNutanixMachines(ctx context.Context, params verifyProjectNutanixMachinesParams) {
-	nutanixMachines := t.getNutanixMachinesForCluster(ctx, params.clusterName, params.namespace, params.bootstrapClusterProxy)
+func (t testHelper) verifyProjectNutanixMachines(
+	ctx context.Context,
+	params verifyProjectNutanixMachinesParams,
+) {
+	nutanixMachines := t.getNutanixMachinesForCluster(
+		ctx,
+		params.clusterName,
+		params.namespace,
+		params.bootstrapClusterProxy,
+	)
 	for _, m := range nutanixMachines.Items {
 		machineProviderID := m.Spec.ProviderID
 		Expect(machineProviderID).NotTo(BeEmpty())
@@ -696,8 +849,16 @@ type verifyGPUNutanixMachinesParams struct {
 	bootstrapClusterProxy framework.ClusterProxy
 }
 
-func (t testHelper) verifyGPUNutanixMachines(ctx context.Context, params verifyGPUNutanixMachinesParams) {
-	nutanixMachines := t.getNutanixMachinesForCluster(ctx, params.clusterName, params.namespace, params.bootstrapClusterProxy)
+func (t testHelper) verifyGPUNutanixMachines(
+	ctx context.Context,
+	params verifyGPUNutanixMachinesParams,
+) {
+	nutanixMachines := t.getNutanixMachinesForCluster(
+		ctx,
+		params.clusterName,
+		params.namespace,
+		params.bootstrapClusterProxy,
+	)
 	for _, m := range nutanixMachines.Items {
 		machineProviderID := m.Spec.ProviderID
 		Expect(machineProviderID).NotTo(BeEmpty())
@@ -741,9 +902,34 @@ func (t testHelper) deleteSecret(params deleteSecretParams) {
 
 func init() {
 	flag.StringVar(&configPath, "e2e.config", "", "path to the e2e config file")
-	flag.StringVar(&artifactFolder, "e2e.artifacts-folder", "", "folder where e2e test artifact should be stored")
-	flag.BoolVar(&alsoLogToFile, "e2e.also-log-to-file", true, "if true, ginkgo logs are additionally written to the `ginkgo-log.txt` file in the artifacts folder (including timestamps)")
-	flag.BoolVar(&skipCleanup, "e2e.skip-resource-cleanup", false, "if true, the resource cleanup after tests will be skipped")
-	flag.StringVar(&clusterctlConfig, "e2e.clusterctl-config", "", "file which tests will use as a clusterctl config. If it is not set, a local clusterctl repository (including a clusterctl config) will be created automatically.")
-	flag.BoolVar(&useExistingCluster, "e2e.use-existing-cluster", false, "if true, the test uses the current cluster instead of creating a new one (default discovery rules apply)")
+	flag.StringVar(
+		&artifactFolder,
+		"e2e.artifacts-folder",
+		"",
+		"folder where e2e test artifact should be stored",
+	)
+	flag.BoolVar(
+		&alsoLogToFile,
+		"e2e.also-log-to-file",
+		true,
+		"if true, ginkgo logs are additionally written to the `ginkgo-log.txt` file in the artifacts folder (including timestamps)",
+	)
+	flag.BoolVar(
+		&skipCleanup,
+		"e2e.skip-resource-cleanup",
+		false,
+		"if true, the resource cleanup after tests will be skipped",
+	)
+	flag.StringVar(
+		&clusterctlConfig,
+		"e2e.clusterctl-config",
+		"",
+		"file which tests will use as a clusterctl config. If it is not set, a local clusterctl repository (including a clusterctl config) will be created automatically.",
+	)
+	flag.BoolVar(
+		&useExistingCluster,
+		"e2e.use-existing-cluster",
+		false,
+		"if true, the test uses the current cluster instead of creating a new one (default discovery rules apply)",
+	)
 }

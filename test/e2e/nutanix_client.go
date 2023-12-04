@@ -50,10 +50,30 @@ var (
 )
 
 func init() {
-	flag.StringVar(&nutanixEndpoint, "e2e.nutanixEndpoint", os.Getenv(nutanixEndpointVarKey), "the Nutanix Prism Central used for e2e tests")
-	flag.StringVar(&nutanixPort, "e2e.nutanixPort", os.Getenv(nutanixPortVarKey), "the Nutanix Prism Central port used for e2e tests")
-	flag.StringVar(&nutanixInsecure, "e2e.nutanixInsecure", os.Getenv(nutanixInsecureVarKey), "Ignore certificate checks for e2e tests")
-	flag.StringVar(&nutanixAdditionalTrustBundle, "e2e.nutanixAdditionalTrustBundle", os.Getenv(nutanixAdditionalTrustBundleVarKey), "Additional trust bundle for e2e tests")
+	flag.StringVar(
+		&nutanixEndpoint,
+		"e2e.nutanixEndpoint",
+		os.Getenv(nutanixEndpointVarKey),
+		"the Nutanix Prism Central used for e2e tests",
+	)
+	flag.StringVar(
+		&nutanixPort,
+		"e2e.nutanixPort",
+		os.Getenv(nutanixPortVarKey),
+		"the Nutanix Prism Central port used for e2e tests",
+	)
+	flag.StringVar(
+		&nutanixInsecure,
+		"e2e.nutanixInsecure",
+		os.Getenv(nutanixInsecureVarKey),
+		"Ignore certificate checks for e2e tests",
+	)
+	flag.StringVar(
+		&nutanixAdditionalTrustBundle,
+		"e2e.nutanixAdditionalTrustBundle",
+		os.Getenv(nutanixAdditionalTrustBundleVarKey),
+		"Additional trust bundle for e2e tests",
+	)
 }
 
 func fetchCredentialParameter(key string, config clusterctl.E2EConfig, allowEmpty bool) string {
@@ -94,7 +114,11 @@ func getNutanixCredentials(e2eConfig clusterctl.E2EConfig) (*prismGoClient.Crede
 		nutanixInsecure = fetchCredentialParameter(nutanixInsecureVarKey, e2eConfig, true)
 	}
 	if nutanixAdditionalTrustBundle == "" {
-		nutanixAdditionalTrustBundle = fetchCredentialParameter(nutanixAdditionalTrustBundleVarKey, e2eConfig, true)
+		nutanixAdditionalTrustBundle = fetchCredentialParameter(
+			nutanixAdditionalTrustBundleVarKey,
+			e2eConfig,
+			true,
+		)
 	}
 
 	creds := &prismGoClient.Credentials{
@@ -106,7 +130,11 @@ func getNutanixCredentials(e2eConfig clusterctl.E2EConfig) (*prismGoClient.Crede
 	if nutanixInsecure != "" {
 		insecureBool, err := strconv.ParseBool(nutanixInsecure)
 		if err != nil {
-			return nil, fmt.Errorf("unable to convert value for environment variable %s to bool: %v", nutanixInsecureVarKey, err)
+			return nil, fmt.Errorf(
+				"unable to convert value for environment variable %s to bool: %v",
+				nutanixInsecureVarKey,
+				err,
+			)
 		}
 		creds.Insecure = insecureBool
 	}

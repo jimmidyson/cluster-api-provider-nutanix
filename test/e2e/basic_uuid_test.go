@@ -27,55 +27,74 @@ import (
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
 )
 
-var _ = Describe("Nutanix Basic Creation with UUID", Label("capx-feature-test", "uuid", "slow", "network"), func() {
-	const (
-		specName = "cluster-uuid"
-	)
+var _ = Describe(
+	"Nutanix Basic Creation with UUID",
+	Label("capx-feature-test", "uuid", "slow", "network"),
+	func() {
+		const (
+			specName = "cluster-uuid"
+		)
 
-	var (
-		namespace        *corev1.Namespace
-		clusterName      string
-		clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult
-		cancelWatches    context.CancelFunc
-		testHelper       testHelperInterface
-	)
+		var (
+			namespace        *corev1.Namespace
+			clusterName      string
+			clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult
+			cancelWatches    context.CancelFunc
+			testHelper       testHelperInterface
+		)
 
-	BeforeEach(func() {
-		testHelper = newTestHelper(e2eConfig)
-		clusterName = testHelper.generateTestClusterName(specName)
-		clusterResources = new(clusterctl.ApplyClusterTemplateAndWaitResult)
-		Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
-		namespace, cancelWatches = setupSpecNamespace(ctx, specName, bootstrapClusterProxy, artifactFolder)
-	})
+		BeforeEach(func() {
+			testHelper = newTestHelper(e2eConfig)
+			clusterName = testHelper.generateTestClusterName(specName)
+			clusterResources = new(clusterctl.ApplyClusterTemplateAndWaitResult)
+			Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
+			namespace, cancelWatches = setupSpecNamespace(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
+			)
+		})
 
-	AfterEach(func() {
-		dumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, artifactFolder, namespace, cancelWatches, clusterResources.Cluster, e2eConfig.GetIntervals, skipCleanup)
-	})
+		AfterEach(func() {
+			dumpSpecResourcesAndCleanup(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
+				namespace,
+				cancelWatches,
+				clusterResources.Cluster,
+				e2eConfig.GetIntervals,
+				skipCleanup,
+			)
+		})
 
-	It("Create a cluster by passing UUIDs", func() {
-		flavor = "no-nmt"
-		Expect(namespace).NotTo(BeNil())
+		It("Create a cluster by passing UUIDs", func() {
+			flavor = "no-nmt"
+			Expect(namespace).NotTo(BeNil())
 
-		By("Creating Nutanix Machine Template with UUIDs", func() {
-			uuidNMT := testHelper.createUUIDNMT(ctx, clusterName, namespace.Name)
-			testHelper.createCapiObject(ctx, createCapiObjectParams{
-				creator:    bootstrapClusterProxy.GetClient(),
-				capiObject: uuidNMT,
+			By("Creating Nutanix Machine Template with UUIDs", func() {
+				uuidNMT := testHelper.createUUIDNMT(ctx, clusterName, namespace.Name)
+				testHelper.createCapiObject(ctx, createCapiObjectParams{
+					creator:    bootstrapClusterProxy.GetClient(),
+					capiObject: uuidNMT,
+				})
 			})
-		})
 
-		By("Creating a workload cluster", func() {
-			testHelper.deployClusterAndWait(
-				deployClusterParams{
-					clusterName:           clusterName,
-					namespace:             namespace,
-					flavor:                flavor,
-					clusterctlConfigPath:  clusterctlConfigPath,
-					artifactFolder:        artifactFolder,
-					bootstrapClusterProxy: bootstrapClusterProxy,
-				}, clusterResources)
-		})
+			By("Creating a workload cluster", func() {
+				testHelper.deployClusterAndWait(
+					deployClusterParams{
+						clusterName:           clusterName,
+						namespace:             namespace,
+						flavor:                flavor,
+						clusterctlConfigPath:  clusterctlConfigPath,
+						artifactFolder:        artifactFolder,
+						bootstrapClusterProxy: bootstrapClusterProxy,
+					}, clusterResources)
+			})
 
-		By("PASSED!")
-	})
-})
+			By("PASSED!")
+		})
+	},
+)

@@ -1,12 +1,14 @@
-bases:
-  - ../../../../../../templates/base/cluster-with-kcp.yaml
-  - ../../../../../../templates/base/secret.yaml
-  - ../../../../../../templates/base/cm.yaml
-  - ../../../../../../templates/base/nmt.yaml
-  - ../../../../../../templates/base/md.yaml
-  - ../base/crs.yaml
-  - ./mhc.yaml
 
-patchesStrategicMerge:
-  - ../base/cni-patch.yaml
-  - ./md.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../../../../../templates/base/cluster-with-kcp.yaml
+- ../../../../../../templates/base/secret.yaml
+- ../../../../../../templates/base/cm.yaml
+- ../../../../../../templates/base/nmt.yaml
+- ../../../../../../templates/base/md.yaml
+- ../base/crs.yaml
+- ./mhc.yaml
+patches:
+- path: ../base/cni-patch.yaml
+- path: ./md.yaml

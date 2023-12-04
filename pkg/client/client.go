@@ -48,14 +48,20 @@ type NutanixClientHelper struct {
 	configMapInformer coreinformers.ConfigMapInformer
 }
 
-func NewNutanixClientHelper(secretInformer coreinformers.SecretInformer, cmInformer coreinformers.ConfigMapInformer) (*NutanixClientHelper, error) {
+func NewNutanixClientHelper(
+	secretInformer coreinformers.SecretInformer,
+	cmInformer coreinformers.ConfigMapInformer,
+) (*NutanixClientHelper, error) {
 	return &NutanixClientHelper{
 		secretInformer:    secretInformer,
 		configMapInformer: cmInformer,
 	}, nil
 }
 
-func (n *NutanixClientHelper) GetClientFromEnvironment(ctx context.Context, nutanixCluster *infrav1.NutanixCluster) (*nutanixClientV3.Client, error) {
+func (n *NutanixClientHelper) GetClientFromEnvironment(
+	ctx context.Context,
+	nutanixCluster *infrav1.NutanixCluster,
+) (*nutanixClientV3.Client, error) {
 	log := ctrl.LoggerFrom(ctx)
 	// Create a list of env providers
 	providers := make([]envTypes.Provider, 0)
@@ -71,7 +77,11 @@ func (n *NutanixClientHelper) GetClientFromEnvironment(ctx context.Context, nuta
 		}
 		credentialRef := prismCentralInfo.CredentialRef
 		if credentialRef == nil {
-			return nil, fmt.Errorf("credentialRef must be set on prismCentral attribute for cluster %s in namespace %s", nutanixCluster.Name, nutanixCluster.Namespace)
+			return nil, fmt.Errorf(
+				"credentialRef must be set on prismCentral attribute for cluster %s in namespace %s",
+				nutanixCluster.Name,
+				nutanixCluster.Namespace,
+			)
 		}
 		// If namespace is empty, use the cluster namespace
 		if credentialRef.Namespace == "" {
@@ -100,14 +110,20 @@ func (n *NutanixClientHelper) GetClientFromEnvironment(ctx context.Context, nuta
 	if npe.CredentialRef.Namespace == "" {
 		capxNamespace := os.Getenv(capxNamespaceKey)
 		if capxNamespace == "" {
-			return nil, fmt.Errorf("failed to retrieve capx-namespace. Make sure %s env variable is set", capxNamespaceKey)
+			return nil, fmt.Errorf(
+				"failed to retrieve capx-namespace. Make sure %s env variable is set",
+				capxNamespaceKey,
+			)
 		}
 		npe.CredentialRef.Namespace = capxNamespace
 	}
 	if npe.AdditionalTrustBundle != nil && npe.AdditionalTrustBundle.Namespace == "" {
 		capxNamespace := os.Getenv(capxNamespaceKey)
 		if capxNamespace == "" {
-			return nil, fmt.Errorf("failed to retrieve capx-namespace. Make sure %s env variable is set", capxNamespaceKey)
+			return nil, fmt.Errorf(
+				"failed to retrieve capx-namespace. Make sure %s env variable is set",
+				capxNamespaceKey,
+			)
 		}
 		npe.AdditionalTrustBundle.Namespace = capxNamespace
 	}
@@ -136,7 +152,10 @@ func (n *NutanixClientHelper) GetClientFromEnvironment(ctx context.Context, nuta
 	return n.GetClient(creds, me.AdditionalTrustBundle)
 }
 
-func (n *NutanixClientHelper) GetClient(cred prismgoclient.Credentials, additionalTrustBundle string) (*nutanixClientV3.Client, error) {
+func (n *NutanixClientHelper) GetClient(
+	cred prismgoclient.Credentials,
+	additionalTrustBundle string,
+) (*nutanixClientV3.Client, error) {
 	if cred.Username == "" {
 		return nil, fmt.Errorf("could not create client because username was not set")
 	}
@@ -151,7 +170,10 @@ func (n *NutanixClientHelper) GetClient(cred prismgoclient.Credentials, addition
 	}
 	clientOpts := make([]nutanixClientV3.ClientOption, 0)
 	if additionalTrustBundle != "" {
-		clientOpts = append(clientOpts, nutanixClientV3.WithPEMEncodedCertBundle([]byte(additionalTrustBundle)))
+		clientOpts = append(
+			clientOpts,
+			nutanixClientV3.WithPEMEncodedCertBundle([]byte(additionalTrustBundle)),
+		)
 	}
 	cli, err := nutanixClientV3.NewV3Client(cred, clientOpts...)
 	if err != nil {
@@ -192,7 +214,9 @@ func (n *NutanixClientHelper) readEndpointConfig() ([]byte, error) {
 	}
 }
 
-func GetCredentialRefForCluster(nutanixCluster *infrav1.NutanixCluster) (*credentialTypes.NutanixCredentialReference, error) {
+func GetCredentialRefForCluster(
+	nutanixCluster *infrav1.NutanixCluster,
+) (*credentialTypes.NutanixCredentialReference, error) {
 	if nutanixCluster == nil {
 		return nil, fmt.Errorf("cannot get credential reference if nutanix cluster object is nil")
 	}
@@ -201,7 +225,11 @@ func GetCredentialRefForCluster(nutanixCluster *infrav1.NutanixCluster) (*creden
 		return nil, nil
 	}
 	if prismCentralinfo.CredentialRef == nil {
-		return nil, fmt.Errorf("credentialRef must be set on prismCentral attribute for cluster %s in namespace %s", nutanixCluster.Name, nutanixCluster.Namespace)
+		return nil, fmt.Errorf(
+			"credentialRef must be set on prismCentral attribute for cluster %s in namespace %s",
+			nutanixCluster.Name,
+			nutanixCluster.Namespace,
+		)
 	}
 	if prismCentralinfo.CredentialRef.Kind != credentialTypes.SecretKind {
 		return nil, nil
