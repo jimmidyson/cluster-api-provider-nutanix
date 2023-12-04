@@ -17,9 +17,7 @@ changelog:
 
 release:
   extra_files:
-    - name_template: out/infrastructure-components.yaml
-    - name_template: out/metadata.yaml
-    - glob: out/cluster-template*.yaml
+    - glob: out/*.yaml
   footer: |
     ## Images
     |Name|Link|
