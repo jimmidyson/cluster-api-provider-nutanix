@@ -30,7 +30,7 @@ jobs:
 
     - name: build template
       run: |
-        (cd config/manager && devbox run -- kustomize edit set image controller=ghcr.io/${{ github.repository }}/controller:${{ github.ref }})
+        (cd config/manager && devbox run -- kustomize edit set image controller=ghcr.io/${{ github.repository }}/controller:${{ github.ref_name }})
         devbox run -- make release-manifests
 
     - name: Release
