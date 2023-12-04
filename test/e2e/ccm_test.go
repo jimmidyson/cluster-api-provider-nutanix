@@ -29,75 +29,101 @@ import (
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
 )
 
-var _ = Describe("Nutanix flavor CCM", Label("capx-feature-test", "ccm", "slow", "network"), func() {
-	const (
-		specName           = "cluster-ccm"
-		ccmInstanceTypeKey = "node.kubernetes.io/instance-type"
-		ccmInstanceType    = "ahv-vm"
-		ccmZoneKey         = "topology.kubernetes.io/zone"
-		ccmRegionKey       = "topology.kubernetes.io/region"
-	)
+var _ = Describe(
+	"Nutanix flavor CCM",
+	Label("capx-feature-test", "ccm", "slow", "network"),
+	func() {
+		const (
+			specName           = "cluster-ccm"
+			ccmInstanceTypeKey = "node.kubernetes.io/instance-type"
+			ccmInstanceType    = "ahv-vm"
+			ccmZoneKey         = "topology.kubernetes.io/zone"
+			ccmRegionKey       = "topology.kubernetes.io/region"
+		)
 
-	var (
-		namespace         *corev1.Namespace
-		clusterName       string
-		clusterResources  *clusterctl.ApplyClusterTemplateAndWaitResult
-		cancelWatches     context.CancelFunc
-		testHelper        testHelperInterface
-		expectedCCMLabels []string
-	)
+		var (
+			namespace         *corev1.Namespace
+			clusterName       string
+			clusterResources  *clusterctl.ApplyClusterTemplateAndWaitResult
+			cancelWatches     context.CancelFunc
+			testHelper        testHelperInterface
+			expectedCCMLabels []string
+		)
 
-	BeforeEach(func() {
-		testHelper = newTestHelper(e2eConfig)
-		clusterName = testHelper.generateTestClusterName(specName)
-		clusterResources = &clusterctl.ApplyClusterTemplateAndWaitResult{}
-		Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
-		namespace, cancelWatches = setupSpecNamespace(ctx, specName, bootstrapClusterProxy, artifactFolder)
-		expectedCCMLabels = []string{
-			ccmZoneKey,
-			ccmRegionKey,
-			ccmInstanceTypeKey,
-		}
-	})
-
-	AfterEach(func() {
-		dumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, artifactFolder, namespace, cancelWatches, clusterResources.Cluster, e2eConfig.GetIntervals, skipCleanup)
-	})
-
-	It("Create a cluster with Nutanix CCM", func() {
-		const flavor = "ccm"
-
-		Expect(namespace).NotTo(BeNil())
-
-		By("Creating a workload cluster")
-		testHelper.deployClusterAndWait(
-			deployClusterParams{
-				clusterName:           clusterName,
-				namespace:             namespace,
-				flavor:                flavor,
-				clusterctlConfigPath:  clusterctlConfigPath,
-				artifactFolder:        artifactFolder,
-				bootstrapClusterProxy: bootstrapClusterProxy,
-			}, clusterResources)
-
-		By("Fetching workload proxy")
-		workloadProxy := bootstrapClusterProxy.GetWorkloadCluster(ctx, namespace.Name, clusterResources.Cluster.Name)
-
-		By("Checking if nodes have correct CCM labels")
-		nodes, err := workloadProxy.GetClientSet().CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-		Expect(err).ToNot(HaveOccurred())
-		for _, n := range nodes.Items {
-			nodeLabels := n.Labels
-			Expect(nodeLabels).To(gstruct.MatchKeys(gstruct.IgnoreExtras,
-				gstruct.Keys{
-					ccmInstanceTypeKey: Equal(ccmInstanceType),
-				},
-			))
-			for _, k := range expectedCCMLabels {
-				Expect(nodeLabels).To(HaveKey(k))
+		BeforeEach(func() {
+			testHelper = newTestHelper(e2eConfig)
+			clusterName = testHelper.generateTestClusterName(specName)
+			clusterResources = &clusterctl.ApplyClusterTemplateAndWaitResult{}
+			Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
+			namespace, cancelWatches = setupSpecNamespace(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
+			)
+			expectedCCMLabels = []string{
+				ccmZoneKey,
+				ccmRegionKey,
+				ccmInstanceTypeKey,
 			}
-		}
+		})
 
-		By("PASSED!")
-	})
-})
+		AfterEach(func() {
+			dumpSpecResourcesAndCleanup(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
+				namespace,
+				cancelWatches,
+				clusterResources.Cluster,
+				e2eConfig.GetIntervals,
+				skipCleanup,
+			)
+		})
+
+		It("Create a cluster with Nutanix CCM", func() {
+			const flavor = "ccm"
+
+			Expect(namespace).NotTo(BeNil())
+
+			By("Creating a workload cluster")
+			testHelper.deployClusterAndWait(
+				deployClusterParams{
+					clusterName:           clusterName,
+					namespace:             namespace,
+					flavor:                flavor,
+					clusterctlConfigPath:  clusterctlConfigPath,
+					artifactFolder:        artifactFolder,
+					bootstrapClusterProxy: bootstrapClusterProxy,
+				}, clusterResources)
+
+			By("Fetching workload proxy")
+			workloadProxy := bootstrapClusterProxy.GetWorkloadCluster(
+				ctx,
+				namespace.Name,
+				clusterResources.Cluster.Name,
+			)
+
+			By("Checking if nodes have correct CCM labels")
+			nodes, err := workloadProxy.GetClientSet().
+				CoreV1().
+				Nodes().
+				List(ctx, metav1.ListOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			for _, n := range nodes.Items {
+				nodeLabels := n.Labels
+				Expect(nodeLabels).To(gstruct.MatchKeys(gstruct.IgnoreExtras,
+					gstruct.Keys{
+						ccmInstanceTypeKey: Equal(ccmInstanceType),
+					},
+				))
+				for _, k := range expectedCCMLabels {
+					Expect(nodeLabels).To(HaveKey(k))
+				}
+			}
+
+			By("PASSED!")
+		})
+	},
+)

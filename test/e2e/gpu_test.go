@@ -35,306 +35,372 @@ const (
 	nutanixGPUVirtualNameEnv     = "NUTANIX_GPU_VIRTUAL_NAME"
 )
 
-var _ = Describe("Nutanix Passthrough GPU", Label("capx-feature-test", "only-for-validation", "passthrough", "gpu", "slow", "network"), func() {
-	const specName = "cluster-gpu-passthrough"
+var _ = Describe(
+	"Nutanix Passthrough GPU",
+	Label("capx-feature-test", "only-for-validation", "passthrough", "gpu", "slow", "network"),
+	func() {
+		const specName = "cluster-gpu-passthrough"
 
-	var (
-		namespace                 *corev1.Namespace
-		clusterName               string
-		clusterResources          *clusterctl.ApplyClusterTemplateAndWaitResult
-		cancelWatches             context.CancelFunc
-		nutanixGPUPassthroughName string
-		testHelper                testHelperInterface
-	)
+		var (
+			namespace                 *corev1.Namespace
+			clusterName               string
+			clusterResources          *clusterctl.ApplyClusterTemplateAndWaitResult
+			cancelWatches             context.CancelFunc
+			nutanixGPUPassthroughName string
+			testHelper                testHelperInterface
+		)
 
-	BeforeEach(func() {
-		testHelper = newTestHelper(e2eConfig)
-		nutanixGPUPassthroughName = testHelper.getVariableFromE2eConfig(nutanixGPUPassthroughNameEnv)
-		clusterName = testHelper.generateTestClusterName(specName)
-		clusterResources = new(clusterctl.ApplyClusterTemplateAndWaitResult)
-		Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
-		namespace, cancelWatches = setupSpecNamespace(ctx, specName, bootstrapClusterProxy, artifactFolder)
-	})
-
-	AfterEach(func() {
-		dumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, artifactFolder, namespace, cancelWatches, clusterResources.Cluster, e2eConfig.GetIntervals, skipCleanup)
-	})
-
-	It("Create a cluster with non-existing Passthrough GPUs (should fail)", func() {
-		const flavor = "no-nmt"
-
-		Expect(namespace).NotTo(BeNil())
-
-		By("Creating invalid Passthrough GPU Nutanix Machine Template", func() {
-			invalidGPUName := util.RandomString(10)
-			invalidGPUNMT := testHelper.createDefaultNMT(clusterName, namespace.Name)
-			invalidGPUNMT.Spec.Template.Spec.GPUs = []infrav1.NutanixGPU{
-				{
-					Type: infrav1.NutanixGPUIdentifierName,
-					Name: &invalidGPUName,
-				},
-			}
-
-			testHelper.createCapiObject(ctx, createCapiObjectParams{
-				creator:    bootstrapClusterProxy.GetClient(),
-				capiObject: invalidGPUNMT,
-			})
-		})
-
-		By("Creating a workload cluster", func() {
-			testHelper.deployCluster(
-				deployClusterParams{
-					clusterName:           clusterName,
-					namespace:             namespace,
-					flavor:                flavor,
-					clusterctlConfigPath:  clusterctlConfigPath,
-					artifactFolder:        artifactFolder,
-					bootstrapClusterProxy: bootstrapClusterProxy,
-				},
-				clusterResources,
+		BeforeEach(func() {
+			testHelper = newTestHelper(e2eConfig)
+			nutanixGPUPassthroughName = testHelper.getVariableFromE2eConfig(
+				nutanixGPUPassthroughNameEnv,
+			)
+			clusterName = testHelper.generateTestClusterName(specName)
+			clusterResources = new(clusterctl.ApplyClusterTemplateAndWaitResult)
+			Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
+			namespace, cancelWatches = setupSpecNamespace(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
 			)
 		})
 
-		By("Checking machine status is 'Failed' and failure message is set", func() {
-			testHelper.verifyFailureMessageOnClusterMachines(ctx, verifyFailureMessageOnClusterMachinesParams{
-				clusterName:            clusterName,
-				namespace:              namespace,
-				expectedPhase:          "Failed",
-				expectedFailureMessage: "no available GPU found",
-				bootstrapClusterProxy:  bootstrapClusterProxy,
-			})
-		})
-
-		By("PASSED!")
-	})
-
-	It("Create a cluster with passthrough GPUs", func() {
-		const flavor = "no-nmt"
-
-		Expect(namespace).NotTo(BeNil())
-
-		By("Creating passthrough GPU Nutanix Machine Template", func() {
-			GPUNMT := testHelper.createNameGPUNMT(ctx, clusterName, namespace.Name, createGPUNMTParams{
-				gpuNameEnvKey: nutanixGPUPassthroughNameEnv,
-			})
-
-			testHelper.createCapiObject(ctx, createCapiObjectParams{
-				creator:    bootstrapClusterProxy.GetClient(),
-				capiObject: GPUNMT,
-			})
-		})
-
-		By("Creating a workload cluster", func() {
-			testHelper.deployClusterAndWait(
-				deployClusterParams{
-					clusterName:           clusterName,
-					namespace:             namespace,
-					flavor:                flavor,
-					clusterctlConfigPath:  clusterctlConfigPath,
-					artifactFolder:        artifactFolder,
-					bootstrapClusterProxy: bootstrapClusterProxy,
-				}, clusterResources)
-		})
-
-		By("Verifying if Passthrough GPU is assigned to the VMs")
-		testHelper.verifyGPUNutanixMachines(ctx, verifyGPUNutanixMachinesParams{
-			clusterName:           clusterName,
-			namespace:             namespace.Name,
-			gpuName:               nutanixGPUPassthroughName,
-			bootstrapClusterProxy: bootstrapClusterProxy,
-		})
-
-		By("PASSED!")
-	})
-
-	It("Create a cluster with passthrough GPUs using device ID", func() {
-		const flavor = "no-nmt"
-
-		Expect(namespace).NotTo(BeNil())
-
-		By("Creating passthrough GPU Nutanix Machine Template using deviceID", func() {
-			GPUNMT := testHelper.createDeviceIDGPUNMT(ctx, clusterName, namespace.Name, createGPUNMTParams{
-				gpuNameEnvKey: nutanixGPUPassthroughNameEnv,
-			})
-
-			testHelper.createCapiObject(ctx, createCapiObjectParams{
-				creator:    bootstrapClusterProxy.GetClient(),
-				capiObject: GPUNMT,
-			})
-		})
-
-		By("Creating a workload cluster", func() {
-			testHelper.deployClusterAndWait(
-				deployClusterParams{
-					clusterName:           clusterName,
-					namespace:             namespace,
-					flavor:                flavor,
-					clusterctlConfigPath:  clusterctlConfigPath,
-					artifactFolder:        artifactFolder,
-					bootstrapClusterProxy: bootstrapClusterProxy,
-				}, clusterResources)
-		})
-
-		By("Verifying if GPU is assigned to the VMs")
-		testHelper.verifyGPUNutanixMachines(ctx, verifyGPUNutanixMachinesParams{
-			clusterName:           clusterName,
-			namespace:             namespace.Name,
-			gpuName:               nutanixGPUPassthroughName,
-			bootstrapClusterProxy: bootstrapClusterProxy,
-		})
-
-		By("PASSED!")
-	})
-})
-
-var _ = Describe("Nutanix Virtual GPU", Label("capx-feature-test", "only-for-validation", "virtual", "gpu", "slow", "network"), func() {
-	const specName = "cluster-gpu-virtual"
-
-	var (
-		namespace             *corev1.Namespace
-		clusterName           string
-		clusterResources      *clusterctl.ApplyClusterTemplateAndWaitResult
-		cancelWatches         context.CancelFunc
-		nutanixGPUVirtualName string
-		testHelper            testHelperInterface
-	)
-
-	BeforeEach(func() {
-		testHelper = newTestHelper(e2eConfig)
-		nutanixGPUVirtualName = testHelper.getVariableFromE2eConfig(nutanixGPUVirtualNameEnv)
-		clusterName = testHelper.generateTestClusterName(specName)
-		clusterResources = new(clusterctl.ApplyClusterTemplateAndWaitResult)
-		Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
-		namespace, cancelWatches = setupSpecNamespace(ctx, specName, bootstrapClusterProxy, artifactFolder)
-	})
-
-	AfterEach(func() {
-		dumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, artifactFolder, namespace, cancelWatches, clusterResources.Cluster, e2eConfig.GetIntervals, skipCleanup)
-	})
-
-	It("Create a cluster with non-existing virtual GPUs (should fail)", func() {
-		const flavor = "no-nmt"
-
-		Expect(namespace).NotTo(BeNil())
-
-		By("Creating invalid virtual GPU Nutanix Machine Template", func() {
-			invalidGPUName := util.RandomString(10)
-			invalidGPUNMT := testHelper.createDefaultNMT(clusterName, namespace.Name)
-			invalidGPUNMT.Spec.Template.Spec.GPUs = []infrav1.NutanixGPU{
-				{
-					Type: infrav1.NutanixGPUIdentifierName,
-					Name: &invalidGPUName,
-				},
-			}
-
-			testHelper.createCapiObject(ctx, createCapiObjectParams{
-				creator:    bootstrapClusterProxy.GetClient(),
-				capiObject: invalidGPUNMT,
-			})
-		})
-
-		By("Creating a workload cluster", func() {
-			testHelper.deployCluster(
-				deployClusterParams{
-					clusterName:           clusterName,
-					namespace:             namespace,
-					flavor:                flavor,
-					clusterctlConfigPath:  clusterctlConfigPath,
-					artifactFolder:        artifactFolder,
-					bootstrapClusterProxy: bootstrapClusterProxy,
-				},
-				clusterResources,
+		AfterEach(func() {
+			dumpSpecResourcesAndCleanup(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
+				namespace,
+				cancelWatches,
+				clusterResources.Cluster,
+				e2eConfig.GetIntervals,
+				skipCleanup,
 			)
 		})
 
-		By("Checking machine status is 'Failed' and failure message is set", func() {
-			testHelper.verifyFailureMessageOnClusterMachines(ctx, verifyFailureMessageOnClusterMachinesParams{
-				clusterName:            clusterName,
-				namespace:              namespace,
-				expectedPhase:          "Failed",
-				expectedFailureMessage: "no available GPU found",
-				bootstrapClusterProxy:  bootstrapClusterProxy,
-			})
-		})
+		It("Create a cluster with non-existing Passthrough GPUs (should fail)", func() {
+			const flavor = "no-nmt"
 
-		By("PASSED!")
-	})
+			Expect(namespace).NotTo(BeNil())
 
-	It("Create a cluster with virtual GPUs", func() {
-		const flavor = "no-nmt"
+			By("Creating invalid Passthrough GPU Nutanix Machine Template", func() {
+				invalidGPUName := util.RandomString(10)
+				invalidGPUNMT := testHelper.createDefaultNMT(clusterName, namespace.Name)
+				invalidGPUNMT.Spec.Template.Spec.GPUs = []infrav1.NutanixGPU{
+					{
+						Type: infrav1.NutanixGPUIdentifierName,
+						Name: &invalidGPUName,
+					},
+				}
 
-		Expect(namespace).NotTo(BeNil())
-
-		By("Creating virtual GPU Nutanix Machine Template", func() {
-			GPUNMT := testHelper.createNameGPUNMT(ctx, clusterName, namespace.Name, createGPUNMTParams{
-				gpuNameEnvKey: nutanixGPUVirtualNameEnv,
+				testHelper.createCapiObject(ctx, createCapiObjectParams{
+					creator:    bootstrapClusterProxy.GetClient(),
+					capiObject: invalidGPUNMT,
+				})
 			})
 
-			testHelper.createCapiObject(ctx, createCapiObjectParams{
-				creator:    bootstrapClusterProxy.GetClient(),
-				capiObject: GPUNMT,
-			})
-		})
-
-		By("Creating a workload cluster", func() {
-			testHelper.deployClusterAndWait(
-				deployClusterParams{
-					clusterName:           clusterName,
-					namespace:             namespace,
-					flavor:                flavor,
-					clusterctlConfigPath:  clusterctlConfigPath,
-					artifactFolder:        artifactFolder,
-					bootstrapClusterProxy: bootstrapClusterProxy,
-				}, clusterResources)
-		})
-
-		By("Verifying if virtual GPU is assigned to the VMs")
-		testHelper.verifyGPUNutanixMachines(ctx, verifyGPUNutanixMachinesParams{
-			clusterName:           clusterName,
-			namespace:             namespace.Name,
-			gpuName:               nutanixGPUVirtualName,
-			bootstrapClusterProxy: bootstrapClusterProxy,
-		})
-
-		By("PASSED!")
-	})
-
-	It("Create a cluster with virtual GPUs using device ID", func() {
-		const flavor = "no-nmt"
-
-		Expect(namespace).NotTo(BeNil())
-
-		By("Creating virtual GPU Nutanix Machine Template using deviceID", func() {
-			GPUNMT := testHelper.createDeviceIDGPUNMT(ctx, clusterName, namespace.Name, createGPUNMTParams{
-				gpuNameEnvKey: nutanixGPUVirtualNameEnv,
+			By("Creating a workload cluster", func() {
+				testHelper.deployCluster(
+					deployClusterParams{
+						clusterName:           clusterName,
+						namespace:             namespace,
+						flavor:                flavor,
+						clusterctlConfigPath:  clusterctlConfigPath,
+						artifactFolder:        artifactFolder,
+						bootstrapClusterProxy: bootstrapClusterProxy,
+					},
+					clusterResources,
+				)
 			})
 
-			testHelper.createCapiObject(ctx, createCapiObjectParams{
-				creator:    bootstrapClusterProxy.GetClient(),
-				capiObject: GPUNMT,
+			By("Checking machine status is 'Failed' and failure message is set", func() {
+				testHelper.verifyFailureMessageOnClusterMachines(
+					ctx,
+					verifyFailureMessageOnClusterMachinesParams{
+						clusterName:            clusterName,
+						namespace:              namespace,
+						expectedPhase:          "Failed",
+						expectedFailureMessage: "no available GPU found",
+						bootstrapClusterProxy:  bootstrapClusterProxy,
+					},
+				)
 			})
+
+			By("PASSED!")
 		})
 
-		By("Creating a workload cluster", func() {
-			testHelper.deployClusterAndWait(
-				deployClusterParams{
-					clusterName:           clusterName,
-					namespace:             namespace,
-					flavor:                flavor,
-					clusterctlConfigPath:  clusterctlConfigPath,
-					artifactFolder:        artifactFolder,
-					bootstrapClusterProxy: bootstrapClusterProxy,
-				}, clusterResources)
+		It("Create a cluster with passthrough GPUs", func() {
+			const flavor = "no-nmt"
+
+			Expect(namespace).NotTo(BeNil())
+
+			By("Creating passthrough GPU Nutanix Machine Template", func() {
+				GPUNMT := testHelper.createNameGPUNMT(
+					ctx,
+					clusterName,
+					namespace.Name,
+					createGPUNMTParams{
+						gpuNameEnvKey: nutanixGPUPassthroughNameEnv,
+					},
+				)
+
+				testHelper.createCapiObject(ctx, createCapiObjectParams{
+					creator:    bootstrapClusterProxy.GetClient(),
+					capiObject: GPUNMT,
+				})
+			})
+
+			By("Creating a workload cluster", func() {
+				testHelper.deployClusterAndWait(
+					deployClusterParams{
+						clusterName:           clusterName,
+						namespace:             namespace,
+						flavor:                flavor,
+						clusterctlConfigPath:  clusterctlConfigPath,
+						artifactFolder:        artifactFolder,
+						bootstrapClusterProxy: bootstrapClusterProxy,
+					}, clusterResources)
+			})
+
+			By("Verifying if Passthrough GPU is assigned to the VMs")
+			testHelper.verifyGPUNutanixMachines(ctx, verifyGPUNutanixMachinesParams{
+				clusterName:           clusterName,
+				namespace:             namespace.Name,
+				gpuName:               nutanixGPUPassthroughName,
+				bootstrapClusterProxy: bootstrapClusterProxy,
+			})
+
+			By("PASSED!")
 		})
 
-		By("Verifying if GPU is assigned to the VMs")
-		testHelper.verifyGPUNutanixMachines(ctx, verifyGPUNutanixMachinesParams{
-			clusterName:           clusterName,
-			namespace:             namespace.Name,
-			gpuName:               nutanixGPUVirtualName,
-			bootstrapClusterProxy: bootstrapClusterProxy,
+		It("Create a cluster with passthrough GPUs using device ID", func() {
+			const flavor = "no-nmt"
+
+			Expect(namespace).NotTo(BeNil())
+
+			By("Creating passthrough GPU Nutanix Machine Template using deviceID", func() {
+				GPUNMT := testHelper.createDeviceIDGPUNMT(
+					ctx,
+					clusterName,
+					namespace.Name,
+					createGPUNMTParams{
+						gpuNameEnvKey: nutanixGPUPassthroughNameEnv,
+					},
+				)
+
+				testHelper.createCapiObject(ctx, createCapiObjectParams{
+					creator:    bootstrapClusterProxy.GetClient(),
+					capiObject: GPUNMT,
+				})
+			})
+
+			By("Creating a workload cluster", func() {
+				testHelper.deployClusterAndWait(
+					deployClusterParams{
+						clusterName:           clusterName,
+						namespace:             namespace,
+						flavor:                flavor,
+						clusterctlConfigPath:  clusterctlConfigPath,
+						artifactFolder:        artifactFolder,
+						bootstrapClusterProxy: bootstrapClusterProxy,
+					}, clusterResources)
+			})
+
+			By("Verifying if GPU is assigned to the VMs")
+			testHelper.verifyGPUNutanixMachines(ctx, verifyGPUNutanixMachinesParams{
+				clusterName:           clusterName,
+				namespace:             namespace.Name,
+				gpuName:               nutanixGPUPassthroughName,
+				bootstrapClusterProxy: bootstrapClusterProxy,
+			})
+
+			By("PASSED!")
+		})
+	},
+)
+
+var _ = Describe(
+	"Nutanix Virtual GPU",
+	Label("capx-feature-test", "only-for-validation", "virtual", "gpu", "slow", "network"),
+	func() {
+		const specName = "cluster-gpu-virtual"
+
+		var (
+			namespace             *corev1.Namespace
+			clusterName           string
+			clusterResources      *clusterctl.ApplyClusterTemplateAndWaitResult
+			cancelWatches         context.CancelFunc
+			nutanixGPUVirtualName string
+			testHelper            testHelperInterface
+		)
+
+		BeforeEach(func() {
+			testHelper = newTestHelper(e2eConfig)
+			nutanixGPUVirtualName = testHelper.getVariableFromE2eConfig(nutanixGPUVirtualNameEnv)
+			clusterName = testHelper.generateTestClusterName(specName)
+			clusterResources = new(clusterctl.ApplyClusterTemplateAndWaitResult)
+			Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
+			namespace, cancelWatches = setupSpecNamespace(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
+			)
 		})
 
-		By("PASSED!")
-	})
-})
+		AfterEach(func() {
+			dumpSpecResourcesAndCleanup(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
+				namespace,
+				cancelWatches,
+				clusterResources.Cluster,
+				e2eConfig.GetIntervals,
+				skipCleanup,
+			)
+		})
+
+		It("Create a cluster with non-existing virtual GPUs (should fail)", func() {
+			const flavor = "no-nmt"
+
+			Expect(namespace).NotTo(BeNil())
+
+			By("Creating invalid virtual GPU Nutanix Machine Template", func() {
+				invalidGPUName := util.RandomString(10)
+				invalidGPUNMT := testHelper.createDefaultNMT(clusterName, namespace.Name)
+				invalidGPUNMT.Spec.Template.Spec.GPUs = []infrav1.NutanixGPU{
+					{
+						Type: infrav1.NutanixGPUIdentifierName,
+						Name: &invalidGPUName,
+					},
+				}
+
+				testHelper.createCapiObject(ctx, createCapiObjectParams{
+					creator:    bootstrapClusterProxy.GetClient(),
+					capiObject: invalidGPUNMT,
+				})
+			})
+
+			By("Creating a workload cluster", func() {
+				testHelper.deployCluster(
+					deployClusterParams{
+						clusterName:           clusterName,
+						namespace:             namespace,
+						flavor:                flavor,
+						clusterctlConfigPath:  clusterctlConfigPath,
+						artifactFolder:        artifactFolder,
+						bootstrapClusterProxy: bootstrapClusterProxy,
+					},
+					clusterResources,
+				)
+			})
+
+			By("Checking machine status is 'Failed' and failure message is set", func() {
+				testHelper.verifyFailureMessageOnClusterMachines(
+					ctx,
+					verifyFailureMessageOnClusterMachinesParams{
+						clusterName:            clusterName,
+						namespace:              namespace,
+						expectedPhase:          "Failed",
+						expectedFailureMessage: "no available GPU found",
+						bootstrapClusterProxy:  bootstrapClusterProxy,
+					},
+				)
+			})
+
+			By("PASSED!")
+		})
+
+		It("Create a cluster with virtual GPUs", func() {
+			const flavor = "no-nmt"
+
+			Expect(namespace).NotTo(BeNil())
+
+			By("Creating virtual GPU Nutanix Machine Template", func() {
+				GPUNMT := testHelper.createNameGPUNMT(
+					ctx,
+					clusterName,
+					namespace.Name,
+					createGPUNMTParams{
+						gpuNameEnvKey: nutanixGPUVirtualNameEnv,
+					},
+				)
+
+				testHelper.createCapiObject(ctx, createCapiObjectParams{
+					creator:    bootstrapClusterProxy.GetClient(),
+					capiObject: GPUNMT,
+				})
+			})
+
+			By("Creating a workload cluster", func() {
+				testHelper.deployClusterAndWait(
+					deployClusterParams{
+						clusterName:           clusterName,
+						namespace:             namespace,
+						flavor:                flavor,
+						clusterctlConfigPath:  clusterctlConfigPath,
+						artifactFolder:        artifactFolder,
+						bootstrapClusterProxy: bootstrapClusterProxy,
+					}, clusterResources)
+			})
+
+			By("Verifying if virtual GPU is assigned to the VMs")
+			testHelper.verifyGPUNutanixMachines(ctx, verifyGPUNutanixMachinesParams{
+				clusterName:           clusterName,
+				namespace:             namespace.Name,
+				gpuName:               nutanixGPUVirtualName,
+				bootstrapClusterProxy: bootstrapClusterProxy,
+			})
+
+			By("PASSED!")
+		})
+
+		It("Create a cluster with virtual GPUs using device ID", func() {
+			const flavor = "no-nmt"
+
+			Expect(namespace).NotTo(BeNil())
+
+			By("Creating virtual GPU Nutanix Machine Template using deviceID", func() {
+				GPUNMT := testHelper.createDeviceIDGPUNMT(
+					ctx,
+					clusterName,
+					namespace.Name,
+					createGPUNMTParams{
+						gpuNameEnvKey: nutanixGPUVirtualNameEnv,
+					},
+				)
+
+				testHelper.createCapiObject(ctx, createCapiObjectParams{
+					creator:    bootstrapClusterProxy.GetClient(),
+					capiObject: GPUNMT,
+				})
+			})
+
+			By("Creating a workload cluster", func() {
+				testHelper.deployClusterAndWait(
+					deployClusterParams{
+						clusterName:           clusterName,
+						namespace:             namespace,
+						flavor:                flavor,
+						clusterctlConfigPath:  clusterctlConfigPath,
+						artifactFolder:        artifactFolder,
+						bootstrapClusterProxy: bootstrapClusterProxy,
+					}, clusterResources)
+			})
+
+			By("Verifying if GPU is assigned to the VMs")
+			testHelper.verifyGPUNutanixMachines(ctx, verifyGPUNutanixMachinesParams{
+				clusterName:           clusterName,
+				namespace:             namespace.Name,
+				gpuName:               nutanixGPUVirtualName,
+				bootstrapClusterProxy: bootstrapClusterProxy,
+			})
+
+			By("PASSED!")
+		})
+	},
+)

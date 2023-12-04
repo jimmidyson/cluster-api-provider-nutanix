@@ -24,14 +24,18 @@ import (
 	capi_e2e "sigs.k8s.io/cluster-api/test/e2e"
 )
 
-var _ = Describe("When testing unhealthy machines remediation", Label("machine-health-remediation", "slow", "network"), func() {
-	capi_e2e.MachineRemediationSpec(ctx, func() capi_e2e.MachineRemediationSpecInput {
-		return capi_e2e.MachineRemediationSpecInput{
-			E2EConfig:             e2eConfig,
-			ClusterctlConfigPath:  clusterctlConfigPath,
-			BootstrapClusterProxy: bootstrapClusterProxy,
-			ArtifactFolder:        artifactFolder,
-			SkipCleanup:           skipCleanup,
-		}
-	})
-})
+var _ = Describe(
+	"When testing unhealthy machines remediation",
+	Label("machine-health-remediation", "slow", "network"),
+	func() {
+		capi_e2e.MachineRemediationSpec(ctx, func() capi_e2e.MachineRemediationSpecInput {
+			return capi_e2e.MachineRemediationSpecInput{
+				E2EConfig:             e2eConfig,
+				ClusterctlConfigPath:  clusterctlConfigPath,
+				BootstrapClusterProxy: bootstrapClusterProxy,
+				ArtifactFolder:        artifactFolder,
+				SkipCleanup:           skipCleanup,
+			}
+		})
+	},
+)

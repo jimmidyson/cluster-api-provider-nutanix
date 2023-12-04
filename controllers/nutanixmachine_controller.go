@@ -79,7 +79,13 @@ type NutanixMachineReconciler struct {
 	controllerConfig  *ControllerConfig
 }
 
-func NewNutanixMachineReconciler(client client.Client, secretInformer coreinformers.SecretInformer, configMapInformer coreinformers.ConfigMapInformer, scheme *runtime.Scheme, copts ...ControllerConfigOpts) (*NutanixMachineReconciler, error) {
+func NewNutanixMachineReconciler(
+	client client.Client,
+	secretInformer coreinformers.SecretInformer,
+	configMapInformer coreinformers.ConfigMapInformer,
+	scheme *runtime.Scheme,
+	copts ...ControllerConfigOpts,
+) (*NutanixMachineReconciler, error) {
 	controllerConf := &ControllerConfig{}
 	for _, opt := range copts {
 		if err := opt(controllerConf); err != nil {
@@ -97,7 +103,11 @@ func NewNutanixMachineReconciler(client client.Client, secretInformer coreinform
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *NutanixMachineReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, copts ...ControllerConfigOpts) error {
+func (r *NutanixMachineReconciler) SetupWithManager(
+	ctx context.Context,
+	mgr ctrl.Manager,
+	copts ...ControllerConfigOpts,
+) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrav1.NutanixMachine{}).
 		// Watch the CAPI resource that owns this infrastructure resource.
@@ -115,18 +125,27 @@ func (r *NutanixMachineReconciler) SetupWithManager(ctx context.Context, mgr ctr
 		Complete(r)
 }
 
-func (r *NutanixMachineReconciler) mapNutanixClusterToNutanixMachines(ctx context.Context) handler.MapFunc {
+func (r *NutanixMachineReconciler) mapNutanixClusterToNutanixMachines(
+	ctx context.Context,
+) handler.MapFunc {
 	return func(o client.Object) []ctrl.Request {
 		log := ctrl.LoggerFrom(ctx)
 		nutanixCluster, ok := o.(*infrav1.NutanixCluster)
 		if !ok {
-			log.Error(fmt.Errorf("expected a NutanixCluster object in mapNutanixClusterToNutanixMachines but was %T", o), "unexpected type")
+			log.Error(
+				fmt.Errorf(
+					"expected a NutanixCluster object in mapNutanixClusterToNutanixMachines but was %T",
+					o,
+				),
+				"unexpected type",
+			)
 			return nil
 		}
 
 		cluster, err := capiutil.GetOwnerCluster(ctx, r.Client, nutanixCluster.ObjectMeta)
 		if apierrors.IsNotFound(err) || cluster == nil {
-			log.V(1).Info(fmt.Sprintf("CAPI cluster for NutanixCluster %s not found", nutanixCluster.Name))
+			log.V(1).
+				Info(fmt.Sprintf("CAPI cluster for NutanixCluster %s not found", nutanixCluster.Name))
 			return nil
 		}
 		if err != nil {
@@ -141,7 +160,8 @@ func (r *NutanixMachineReconciler) mapNutanixClusterToNutanixMachines(ctx contex
 		}
 		requests := make([]ctrl.Request, 0)
 		for _, m := range machineList.Items {
-			if m.Spec.InfrastructureRef.Name == "" || m.Spec.InfrastructureRef.GroupVersionKind().Kind != "NutanixMachine" {
+			if m.Spec.InfrastructureRef.Name == "" ||
+				m.Spec.InfrastructureRef.GroupVersionKind().Kind != "NutanixMachine" {
 				continue
 			}
 
@@ -173,7 +193,10 @@ func (r *NutanixMachineReconciler) mapNutanixClusterToNutanixMachines(ctx contex
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
-func (r *NutanixMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
+func (r *NutanixMachineReconciler) Reconcile(
+	ctx context.Context,
+	req ctrl.Request,
+) (res ctrl.Result, reterr error) {
 	log := log.FromContext(ctx)
 	log.Info("Reconciling the NutanixMachine.")
 
@@ -235,7 +258,13 @@ func (r *NutanixMachineReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	v3Client, err := CreateNutanixClient(ctx, r.SecretInformer, r.ConfigMapInformer, ntxCluster)
 	if err != nil {
-		conditions.MarkFalse(ntxMachine, infrav1.PrismCentralClientCondition, infrav1.PrismCentralClientInitializationFailed, capiv1.ConditionSeverityError, err.Error())
+		conditions.MarkFalse(
+			ntxMachine,
+			infrav1.PrismCentralClientCondition,
+			infrav1.PrismCentralClientInitializationFailed,
+			capiv1.ConditionSeverityError,
+			err.Error(),
+		)
 		return ctrl.Result{Requeue: true}, fmt.Errorf("client auth error: %v", err)
 	}
 	conditions.MarkTrue(ntxMachine, infrav1.PrismCentralClientCondition)
@@ -271,13 +300,21 @@ func (r *NutanixMachineReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return r.reconcileNormal(rctx)
 }
 
-func (r *NutanixMachineReconciler) reconcileDelete(rctx *nctx.MachineContext) (reconcile.Result, error) {
+func (r *NutanixMachineReconciler) reconcileDelete(
+	rctx *nctx.MachineContext,
+) (reconcile.Result, error) {
 	ctx := rctx.Context
 	log := ctrl.LoggerFrom(ctx)
 	nc := rctx.NutanixClient
 	vmName := rctx.Machine.Name
 	log.Info(fmt.Sprintf("Handling deletion of VM: %s", vmName))
-	conditions.MarkFalse(rctx.NutanixMachine, infrav1.VMProvisionedCondition, capiv1.DeletingReason, capiv1.ConditionSeverityInfo, "")
+	conditions.MarkFalse(
+		rctx.NutanixMachine,
+		infrav1.VMProvisionedCondition,
+		capiv1.DeletingReason,
+		capiv1.ConditionSeverityInfo,
+		"",
+	)
 	vmUUID, err := GetVMUUID(rctx.NutanixMachine)
 	if err != nil {
 		errorMsg := fmt.Errorf("failed to get VM UUID during delete: %v", err)
@@ -351,10 +388,16 @@ func (r *NutanixMachineReconciler) reconcileDelete(rctx *nctx.MachineContext) (r
 	return reconcile.Result{}, nil
 }
 
-func (r *NutanixMachineReconciler) reconcileNormal(rctx *nctx.MachineContext) (reconcile.Result, error) {
+func (r *NutanixMachineReconciler) reconcileNormal(
+	rctx *nctx.MachineContext,
+) (reconcile.Result, error) {
 	log := ctrl.LoggerFrom(rctx.Context)
-	if rctx.NutanixMachine.Status.FailureReason != nil || rctx.NutanixMachine.Status.FailureMessage != nil {
-		log.Error(fmt.Errorf("nutanix machine has failed. Will not reconcile"), "nutanix machine failed")
+	if rctx.NutanixMachine.Status.FailureReason != nil ||
+		rctx.NutanixMachine.Status.FailureMessage != nil {
+		log.Error(
+			fmt.Errorf("nutanix machine has failed. Will not reconcile"),
+			"nutanix machine failed",
+		)
 		return reconcile.Result{}, nil
 	}
 	log.Info("Handling NutanixMachine reconciling")
@@ -365,13 +408,19 @@ func (r *NutanixMachineReconciler) reconcileNormal(rctx *nctx.MachineContext) (r
 		ctrlutil.AddFinalizer(rctx.NutanixMachine, infrav1.NutanixMachineFinalizer)
 	}
 
-	log.V(1).Info(fmt.Sprintf("Checking current machine status for machine %s: Status %+v Spec %+v", rctx.NutanixMachine.Name, rctx.NutanixMachine.Status, rctx.NutanixMachine.Spec))
+	log.V(1).
+		Info(fmt.Sprintf("Checking current machine status for machine %s: Status %+v Spec %+v", rctx.NutanixMachine.Name, rctx.NutanixMachine.Status, rctx.NutanixMachine.Spec))
 	if rctx.NutanixMachine.Status.Ready {
 		if !rctx.Machine.Status.InfrastructureReady || rctx.Machine.Spec.ProviderID == nil {
 			log.Info("The NutanixMachine is ready, wait for the owner Machine's update.")
 			return reconcile.Result{RequeueAfter: 5 * time.Second}, nil
 		}
-		log.Info(fmt.Sprintf("The NutanixMachine is ready, providerID: %s", rctx.NutanixMachine.Spec.ProviderID))
+		log.Info(
+			fmt.Sprintf(
+				"The NutanixMachine is ready, providerID: %s",
+				rctx.NutanixMachine.Spec.ProviderID,
+			),
+		)
 
 		if rctx.NutanixMachine.Status.NodeRef == nil {
 			return r.reconcileNode(rctx)
@@ -384,7 +433,13 @@ func (r *NutanixMachineReconciler) reconcileNormal(rctx *nctx.MachineContext) (r
 	log.Info("Checking if cluster infrastructure is ready")
 	if !rctx.Cluster.Status.InfrastructureReady {
 		log.Info("The cluster infrastructure is not ready yet")
-		conditions.MarkFalse(rctx.NutanixMachine, infrav1.VMProvisionedCondition, infrav1.ClusterInfrastructureNotReady, capiv1.ConditionSeverityInfo, "")
+		conditions.MarkFalse(
+			rctx.NutanixMachine,
+			infrav1.VMProvisionedCondition,
+			infrav1.ClusterInfrastructureNotReady,
+			capiv1.ConditionSeverityInfo,
+			"",
+		)
 		return reconcile.Result{}, nil
 	}
 
@@ -394,7 +449,13 @@ func (r *NutanixMachineReconciler) reconcileNormal(rctx *nctx.MachineContext) (r
 			if !nctx.IsControlPlaneMachine(rctx.NutanixMachine) &&
 				!conditions.IsTrue(rctx.Cluster, capiv1.ControlPlaneInitializedCondition) {
 				log.Info("Waiting for the control plane to be initialized")
-				conditions.MarkFalse(rctx.NutanixMachine, infrav1.VMProvisionedCondition, infrav1.ControlplaneNotInitialized, capiv1.ConditionSeverityInfo, "")
+				conditions.MarkFalse(
+					rctx.NutanixMachine,
+					infrav1.VMProvisionedCondition,
+					infrav1.ControlplaneNotInitialized,
+					capiv1.ConditionSeverityInfo,
+					"",
+				)
 			} else {
 				conditions.MarkFalse(rctx.NutanixMachine, infrav1.VMProvisionedCondition, infrav1.BootstrapDataNotReady, capiv1.ConditionSeverityInfo, "")
 				log.Info("Waiting for bootstrap data to be available")
@@ -408,7 +469,8 @@ func (r *NutanixMachineReconciler) reconcileNormal(rctx *nctx.MachineContext) (r
 			Name:       *rctx.Machine.Spec.Bootstrap.DataSecretName,
 			Namespace:  rctx.Machine.ObjectMeta.Namespace,
 		}
-		log.V(1).Info(fmt.Sprintf("Added the spec.bootstrapRef to NutanixMachine object: %v", rctx.NutanixMachine.Spec.BootstrapRef))
+		log.V(1).
+			Info(fmt.Sprintf("Added the spec.bootstrapRef to NutanixMachine object: %v", rctx.NutanixMachine.Spec.BootstrapRef))
 	}
 
 	// Create or get existing VM
@@ -417,21 +479,44 @@ func (r *NutanixMachineReconciler) reconcileNormal(rctx *nctx.MachineContext) (r
 		log.Error(err, fmt.Sprintf("Failed to create VM %s.", rctx.Machine.Name))
 		return reconcile.Result{}, err
 	}
-	log.V(1).Info(fmt.Sprintf("Found VM with name: %s, vmUUID: %s", rctx.Machine.Name, *vm.Metadata.UUID))
+	log.V(1).
+		Info(fmt.Sprintf("Found VM with name: %s, vmUUID: %s", rctx.Machine.Name, *vm.Metadata.UUID))
 	rctx.NutanixMachine.Status.VmUUID = *vm.Metadata.UUID
 
-	log.V(1).Info(fmt.Sprintf("Patching machine post creation vmUUID: %s", rctx.NutanixMachine.Status.VmUUID))
+	log.V(1).
+		Info(fmt.Sprintf("Patching machine post creation vmUUID: %s", rctx.NutanixMachine.Status.VmUUID))
 	if err := r.patchMachine(rctx); err != nil {
-		errorMsg := fmt.Errorf("failed to patch NutanixMachine %s after creation. %v", rctx.NutanixMachine.Name, err)
+		errorMsg := fmt.Errorf(
+			"failed to patch NutanixMachine %s after creation. %v",
+			rctx.NutanixMachine.Name,
+			err,
+		)
 		log.Error(errorMsg, "failed to patch")
 		return reconcile.Result{}, errorMsg
 	}
 
-	log.Info(fmt.Sprintf("Assigning IP addresses to VM with name: %s, vmUUID: %s", rctx.NutanixMachine.Name, rctx.NutanixMachine.Status.VmUUID))
+	log.Info(
+		fmt.Sprintf(
+			"Assigning IP addresses to VM with name: %s, vmUUID: %s",
+			rctx.NutanixMachine.Name,
+			rctx.NutanixMachine.Status.VmUUID,
+		),
+	)
 	if err := r.assignAddressesToMachine(rctx, vm); err != nil {
-		errorMsg := fmt.Errorf("failed to assign addresses to VM %s with UUID %s...: %v", rctx.Machine.Name, rctx.NutanixMachine.Status.VmUUID, err)
+		errorMsg := fmt.Errorf(
+			"failed to assign addresses to VM %s with UUID %s...: %v",
+			rctx.Machine.Name,
+			rctx.NutanixMachine.Status.VmUUID,
+			err,
+		)
 		log.Error(errorMsg, "failed to assign addresses")
-		conditions.MarkFalse(rctx.NutanixMachine, infrav1.VMAddressesAssignedCondition, infrav1.VMAddressesFailed, capiv1.ConditionSeverityError, err.Error())
+		conditions.MarkFalse(
+			rctx.NutanixMachine,
+			infrav1.VMAddressesAssignedCondition,
+			infrav1.VMAddressesFailed,
+			capiv1.ConditionSeverityError,
+			err.Error(),
+		)
 		return reconcile.Result{}, errorMsg
 	}
 
@@ -439,15 +524,18 @@ func (r *NutanixMachineReconciler) reconcileNormal(rctx *nctx.MachineContext) (r
 	// Update the NutanixMachine Spec.ProviderID
 	rctx.NutanixMachine.Spec.ProviderID = GenerateProviderID(rctx.NutanixMachine.Status.VmUUID)
 	rctx.NutanixMachine.Status.Ready = true
-	log.V(1).Info(fmt.Sprintf("Created VM %s for cluster %s, update NutanixMachine spec.providerID to %s, and machinespec %+v, vmUuid: %s",
-		rctx.Machine.Name, rctx.NutanixCluster.Name, rctx.NutanixMachine.Spec.ProviderID,
-		rctx.NutanixMachine, rctx.NutanixMachine.Status.VmUUID))
+	log.V(1).
+		Info(fmt.Sprintf("Created VM %s for cluster %s, update NutanixMachine spec.providerID to %s, and machinespec %+v, vmUuid: %s",
+			rctx.Machine.Name, rctx.NutanixCluster.Name, rctx.NutanixMachine.Spec.ProviderID,
+			rctx.NutanixMachine, rctx.NutanixMachine.Status.VmUUID))
 	return reconcile.Result{}, nil
 }
 
 // reconcileNode makes sure the NutanixMachine corresponding workload cluster node
 // is ready and set its spec.providerID
-func (r *NutanixMachineReconciler) reconcileNode(rctx *nctx.MachineContext) (reconcile.Result, error) {
+func (r *NutanixMachineReconciler) reconcileNode(
+	rctx *nctx.MachineContext,
+) (reconcile.Result, error) {
 	log := ctrl.LoggerFrom(rctx.Context)
 	log.V(1).Info("Reconcile the workload cluster node to set its spec.providerID")
 
@@ -461,7 +549,13 @@ func (r *NutanixMachineReconciler) reconcileNode(rctx *nctx.MachineContext) (rec
 			log.Info(fmt.Sprintf("Controlplane endpoint not yet responding. Requeuing: %v", err))
 			return reconcile.Result{Requeue: true}, nil
 		}
-		log.Info(fmt.Sprintf("Failed to get the client to access remote workload cluster %s. %v", rctx.Cluster.Name, err))
+		log.Info(
+			fmt.Sprintf(
+				"Failed to get the client to access remote workload cluster %s. %v",
+				rctx.Cluster.Name,
+				err,
+			),
+		)
 		return reconcile.Result{}, err
 	}
 
@@ -491,30 +585,49 @@ func (r *NutanixMachineReconciler) reconcileNode(rctx *nctx.MachineContext) (rec
 			Name:       node.Name,
 			UID:        node.UID,
 		}
-		log.V(1).Info(fmt.Sprintf("Set NutanixMachine's status.nodeRef: %v", *rctx.NutanixMachine.Status.NodeRef))
+		log.V(1).
+			Info(fmt.Sprintf("Set NutanixMachine's status.nodeRef: %v", *rctx.NutanixMachine.Status.NodeRef))
 	}
 
 	// Update the node's Spec.ProviderID
 	patchHelper, err := patch.NewHelper(node, remoteClient)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("failed to create patchHelper for the workload cluster node %s", nodeName))
+		log.Error(
+			err,
+			fmt.Sprintf("failed to create patchHelper for the workload cluster node %s", nodeName),
+		)
 		return reconcile.Result{}, err
 	}
 
 	node.Spec.ProviderID = rctx.NutanixMachine.Spec.ProviderID
 	err = patchHelper.Patch(rctx.Context, node)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("failed to patch the remote workload cluster node %s's spec.providerID", nodeName))
+		log.Error(
+			err,
+			fmt.Sprintf(
+				"failed to patch the remote workload cluster node %s's spec.providerID",
+				nodeName,
+			),
+		)
 		return reconcile.Result{}, err
 	}
-	log.Info(fmt.Sprintf("Patched the workload node %s spec.providerID: %s", nodeName, node.Spec.ProviderID))
+	log.Info(
+		fmt.Sprintf(
+			"Patched the workload node %s spec.providerID: %s",
+			nodeName,
+			node.Spec.ProviderID,
+		),
+	)
 
 	return reconcile.Result{}, nil
 }
 
 func (r *NutanixMachineReconciler) validateMachineConfig(rctx *nctx.MachineContext) error {
 	if len(rctx.NutanixMachine.Spec.Subnets) == 0 {
-		return fmt.Errorf("atleast one subnet is needed to create the VM %s", rctx.NutanixMachine.Name)
+		return fmt.Errorf(
+			"atleast one subnet is needed to create the VM %s",
+			rctx.NutanixMachine.Name,
+		)
 	}
 
 	diskSize := rctx.NutanixMachine.Spec.SystemDiskSize
@@ -522,7 +635,11 @@ func (r *NutanixMachineReconciler) validateMachineConfig(rctx *nctx.MachineConte
 	if diskSize.Cmp(minMachineSystemDiskSize) < 0 {
 		diskSizeMib := GetMibValueOfQuantity(diskSize)
 		minMachineSystemDiskSizeMib := GetMibValueOfQuantity(minMachineSystemDiskSize)
-		return fmt.Errorf("minimum systemDiskSize is %vMib but given %vMib", minMachineSystemDiskSizeMib, diskSizeMib)
+		return fmt.Errorf(
+			"minimum systemDiskSize is %vMib but given %vMib",
+			minMachineSystemDiskSizeMib,
+			diskSizeMib,
+		)
 	}
 
 	memorySize := rctx.NutanixMachine.Spec.MemorySize
@@ -530,12 +647,20 @@ func (r *NutanixMachineReconciler) validateMachineConfig(rctx *nctx.MachineConte
 	if memorySize.Cmp(minMachineMemorySize) < 0 {
 		memorySizeMib := GetMibValueOfQuantity(memorySize)
 		minMachineMemorySizeMib := GetMibValueOfQuantity(minMachineMemorySize)
-		return fmt.Errorf("minimum memorySize is %vMib but given %vMib", minMachineMemorySizeMib, memorySizeMib)
+		return fmt.Errorf(
+			"minimum memorySize is %vMib but given %vMib",
+			minMachineMemorySizeMib,
+			memorySizeMib,
+		)
 	}
 
 	vcpusPerSocket := rctx.NutanixMachine.Spec.VCPUsPerSocket
 	if vcpusPerSocket < int32(minVCPUsPerSocket) {
-		return fmt.Errorf("minimum vcpus per socket is %v but given %v", minVCPUsPerSocket, vcpusPerSocket)
+		return fmt.Errorf(
+			"minimum vcpus per socket is %v but given %v",
+			minVCPUsPerSocket,
+			vcpusPerSocket,
+		)
 	}
 
 	vcpuSockets := rctx.NutanixMachine.Spec.VCPUSockets
@@ -547,7 +672,9 @@ func (r *NutanixMachineReconciler) validateMachineConfig(rctx *nctx.MachineConte
 }
 
 // GetOrCreateVM creates a VM and is invoked by the NutanixMachineReconciler
-func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*nutanixClientV3.VMIntentResponse, error) {
+func (r *NutanixMachineReconciler) getOrCreateVM(
+	rctx *nctx.MachineContext,
+) (*nutanixClientV3.VMIntentResponse, error) {
 	var err error
 	var vm *nutanixClientV3.VMIntentResponse
 	ctx := rctx.Context
@@ -564,7 +691,13 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*nu
 
 	// if VM exists
 	if vm != nil {
-		log.Info(fmt.Sprintf("vm %s found with UUID %s", *vm.Spec.Name, rctx.NutanixMachine.Status.VmUUID))
+		log.Info(
+			fmt.Sprintf(
+				"vm %s found with UUID %s",
+				*vm.Spec.Name,
+				rctx.NutanixMachine.Status.VmUUID,
+			),
+		)
 		conditions.MarkTrue(rctx.NutanixMachine, infrav1.VMProvisionedCondition)
 		return vm, nil
 	}
@@ -577,9 +710,18 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*nu
 	}
 
 	// Get PE UUID
-	peUUID, err := GetPEUUID(ctx, nc, rctx.NutanixMachine.Spec.Cluster.Name, rctx.NutanixMachine.Spec.Cluster.UUID)
+	peUUID, err := GetPEUUID(
+		ctx,
+		nc,
+		rctx.NutanixMachine.Spec.Cluster.Name,
+		rctx.NutanixMachine.Spec.Cluster.UUID,
+	)
 	if err != nil {
-		errorMsg := fmt.Errorf("failed to get the Prism Element Cluster UUID to create the VM %s. %v", vmName, err)
+		errorMsg := fmt.Errorf(
+			"failed to get the Prism Element Cluster UUID to create the VM %s. %v",
+			vmName,
+			err,
+		)
 		rctx.SetFailureStatus(capierrors.CreateMachineError, errorMsg)
 		return nil, err
 	}
@@ -587,13 +729,22 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*nu
 	// Get Subnet UUIDs
 	subnetUUIDs, err := GetSubnetUUIDList(ctx, nc, rctx.NutanixMachine.Spec.Subnets, peUUID)
 	if err != nil {
-		errorMsg := fmt.Errorf("failed to get the subnet UUIDs to create the VM %s. %v", vmName, err)
+		errorMsg := fmt.Errorf(
+			"failed to get the subnet UUIDs to create the VM %s. %v",
+			vmName,
+			err,
+		)
 		rctx.SetFailureStatus(capierrors.CreateMachineError, errorMsg)
 		return nil, err
 	}
 
 	// Get Image UUID
-	imageUUID, err := GetImageUUID(ctx, nc, rctx.NutanixMachine.Spec.Image.Name, rctx.NutanixMachine.Spec.Image.UUID)
+	imageUUID, err := GetImageUUID(
+		ctx,
+		nc,
+		rctx.NutanixMachine.Spec.Image.Name,
+		rctx.NutanixMachine.Spec.Image.UUID,
+	)
 	if err != nil {
 		errorMsg := fmt.Errorf("failed to get the image UUID to create the VM %s. %v", vmName, err)
 		rctx.SetFailureStatus(capierrors.CreateMachineError, errorMsg)
@@ -608,8 +759,9 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*nu
 	}
 	// Encode the bootstrapData by base64
 	bsdataEncoded := base64.StdEncoding.EncodeToString(bootstrapData)
-	log.V(1).Info(fmt.Sprintf("Retrieved the bootstrap data from secret %s (before encoding size: %d, encoded string size:%d)",
-		rctx.NutanixMachine.Spec.BootstrapRef.Name, len(bootstrapData), len(bsdataEncoded)))
+	log.V(1).
+		Info(fmt.Sprintf("Retrieved the bootstrap data from secret %s (before encoding size: %d, encoded string size:%d)",
+			rctx.NutanixMachine.Spec.BootstrapRef.Name, len(bootstrapData), len(bsdataEncoded)))
 
 	// Generate metadata for the VM
 	vmUUID := uuid.New()
@@ -646,7 +798,11 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*nu
 	// Set Categories to VM Sepc before creating VM
 	categories, err := GetCategoryVMSpec(ctx, nc, r.getMachineCategoryIdentifiers(rctx))
 	if err != nil {
-		errorMsg := fmt.Errorf("error occurred while creating category spec for vm %s: %v", vmName, err)
+		errorMsg := fmt.Errorf(
+			"error occurred while creating category spec for vm %s: %v",
+			vmName,
+			err,
+		)
 		rctx.SetFailureStatus(capierrors.CreateMachineError, errorMsg)
 		return nil, errorMsg
 	}
@@ -659,7 +815,11 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*nu
 	// Set Project in VM Spec before creating VM
 	err = r.addVMToProject(rctx, vmMetadata)
 	if err != nil {
-		errorMsg := fmt.Errorf("error occurred while trying to add VM %s to project: %v", vmName, err)
+		errorMsg := fmt.Errorf(
+			"error occurred while trying to add VM %s to project: %v",
+			vmName,
+			err,
+		)
 		rctx.SetFailureStatus(capierrors.CreateMachineError, errorMsg)
 		return nil, err
 	}
@@ -707,7 +867,9 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*nu
 	vmInput.Spec = vmSpec
 	vmInput.Metadata = vmMetadata
 	// Create the actual VM/Machine
-	log.Info(fmt.Sprintf("Creating VM with name %s for cluster %s", vmName, rctx.NutanixCluster.Name))
+	log.Info(
+		fmt.Sprintf("Creating VM with name %s for cluster %s", vmName, rctx.NutanixCluster.Name),
+	)
 	vmResponse, err := nc.V3.CreateVM(ctx, vmInput)
 	if err != nil {
 		errorMsg := fmt.Errorf("failed to create VM %s. error: %v", vmName, err)
@@ -715,8 +877,12 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*nu
 		return nil, err
 	}
 
-	if vmResponse == nil || vmResponse.Metadata == nil || vmResponse.Metadata.UUID == nil || *vmResponse.Metadata.UUID == "" {
-		errorMsg := fmt.Errorf("no valid VM UUID found in response after creating vm %s", rctx.Machine.Name)
+	if vmResponse == nil || vmResponse.Metadata == nil || vmResponse.Metadata.UUID == nil ||
+		*vmResponse.Metadata.UUID == "" {
+		errorMsg := fmt.Errorf(
+			"no valid VM UUID found in response after creating vm %s",
+			rctx.Machine.Name,
+		)
 		rctx.SetFailureStatus(capierrors.CreateMachineError, errorMsg)
 		return nil, errorMsg
 	}
@@ -725,11 +891,16 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*nu
 	rctx.NutanixMachine.Spec.ProviderID = GenerateProviderID(vmUuid)
 	rctx.NutanixMachine.Status.VmUUID = vmUuid
 
-	log.V(1).Info(fmt.Sprintf("Sent the post request to create VM %s. Got the vm UUID: %s, status.state: %s", vmName, vmUuid, *vmResponse.Status.State))
+	log.V(1).
+		Info(fmt.Sprintf("Sent the post request to create VM %s. Got the vm UUID: %s, status.state: %s", vmName, vmUuid, *vmResponse.Status.State))
 	log.V(1).Info(fmt.Sprintf("Getting task vmUUID for VM %s", vmName))
 	lastTaskUUID, err := GetTaskUUIDFromVM(vmResponse)
 	if err != nil {
-		errorMsg := fmt.Errorf("error occurred fetching task UUID from vm %s after creation: %v", rctx.Machine.Name, err)
+		errorMsg := fmt.Errorf(
+			"error occurred fetching task UUID from vm %s after creation: %v",
+			rctx.Machine.Name,
+			err,
+		)
 		rctx.SetFailureStatus(capierrors.CreateMachineError, errorMsg)
 		return nil, errorMsg
 	}
@@ -739,10 +910,20 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*nu
 		rctx.SetFailureStatus(capierrors.CreateMachineError, errorMsg)
 		return nil, errorMsg
 	}
-	log.Info(fmt.Sprintf("Waiting for task %s to get completed for VM %s", lastTaskUUID, rctx.NutanixMachine.Name))
+	log.Info(
+		fmt.Sprintf(
+			"Waiting for task %s to get completed for VM %s",
+			lastTaskUUID,
+			rctx.NutanixMachine.Name,
+		),
+	)
 	err = nutanixClient.WaitForTaskCompletion(ctx, nc, lastTaskUUID)
 	if err != nil {
-		errorMsg := fmt.Errorf("error occurred while waiting for task %s to start: %v", lastTaskUUID, err)
+		errorMsg := fmt.Errorf(
+			"error occurred while waiting for task %s to start: %v",
+			lastTaskUUID,
+			err,
+		)
 		rctx.SetFailureStatus(capierrors.CreateMachineError, errorMsg)
 		return nil, errorMsg
 	}
@@ -787,7 +968,11 @@ func (r *NutanixMachineReconciler) patchMachine(rctx *nctx.MachineContext) error
 	log := ctrl.LoggerFrom(rctx.Context)
 	patchHelper, err := patch.NewHelper(rctx.NutanixMachine, r.Client)
 	if err != nil {
-		errorMsg := fmt.Errorf("failed to create patch helper to patch machine %s: %v", rctx.NutanixMachine.Name, err)
+		errorMsg := fmt.Errorf(
+			"failed to create patch helper to patch machine %s: %v",
+			rctx.NutanixMachine.Name,
+			err,
+		)
 		return errorMsg
 	}
 	err = patchHelper.Patch(rctx.Context, rctx.NutanixMachine)
@@ -795,11 +980,15 @@ func (r *NutanixMachineReconciler) patchMachine(rctx *nctx.MachineContext) error
 		errorMsg := fmt.Errorf("failed to patch machine %s: %v", rctx.NutanixMachine.Name, err)
 		return errorMsg
 	}
-	log.V(1).Info(fmt.Sprintf("Patched machine %s: Status %+v Spec %+v", rctx.NutanixMachine.Name, rctx.NutanixMachine.Status, rctx.NutanixMachine.Spec))
+	log.V(1).
+		Info(fmt.Sprintf("Patched machine %s: Status %+v Spec %+v", rctx.NutanixMachine.Name, rctx.NutanixMachine.Status, rctx.NutanixMachine.Spec))
 	return nil
 }
 
-func (r *NutanixMachineReconciler) assignAddressesToMachine(rctx *nctx.MachineContext, vm *nutanixClientV3.VMIntentResponse) error {
+func (r *NutanixMachineReconciler) assignAddressesToMachine(
+	rctx *nctx.MachineContext,
+	vm *nutanixClientV3.VMIntentResponse,
+) error {
 	rctx.NutanixMachine.Status.Addresses = []capiv1.MachineAddress{}
 	if vm.Status == nil || vm.Status.Resources == nil {
 		return fmt.Errorf("unable to fetch network interfaces from VM. Retrying")
@@ -808,10 +997,13 @@ func (r *NutanixMachineReconciler) assignAddressesToMachine(rctx *nctx.MachineCo
 	for _, nic := range vm.Status.Resources.NicList {
 		for _, ipEndpoint := range nic.IPEndpointList {
 			if ipEndpoint.IP != nil {
-				rctx.NutanixMachine.Status.Addresses = append(rctx.NutanixMachine.Status.Addresses, capiv1.MachineAddress{
-					Type:    capiv1.MachineInternalIP,
-					Address: *ipEndpoint.IP,
-				})
+				rctx.NutanixMachine.Status.Addresses = append(
+					rctx.NutanixMachine.Status.Addresses,
+					capiv1.MachineAddress{
+						Type:    capiv1.MachineInternalIP,
+						Address: *ipEndpoint.IP,
+					},
+				)
 				foundIPs++
 			}
 		}
@@ -820,14 +1012,19 @@ func (r *NutanixMachineReconciler) assignAddressesToMachine(rctx *nctx.MachineCo
 		return fmt.Errorf("unable to determine network interfaces from VM. Retrying")
 	}
 	rctx.IP = rctx.NutanixMachine.Status.Addresses[0].Address
-	rctx.NutanixMachine.Status.Addresses = append(rctx.NutanixMachine.Status.Addresses, capiv1.MachineAddress{
-		Type:    capiv1.MachineHostName,
-		Address: *vm.Spec.Name,
-	})
+	rctx.NutanixMachine.Status.Addresses = append(
+		rctx.NutanixMachine.Status.Addresses,
+		capiv1.MachineAddress{
+			Type:    capiv1.MachineHostName,
+			Address: *vm.Spec.Name,
+		},
+	)
 	return nil
 }
 
-func (r *NutanixMachineReconciler) getMachineCategoryIdentifiers(rctx *nctx.MachineContext) []*infrav1.NutanixCategoryIdentifier {
+func (r *NutanixMachineReconciler) getMachineCategoryIdentifiers(
+	rctx *nctx.MachineContext,
+) []*infrav1.NutanixCategoryIdentifier {
 	log := ctrl.LoggerFrom(rctx.Context)
 	categoryIdentifiers := GetDefaultCAPICategoryIdentifiers(rctx.Cluster.Name)
 	// Only try to create default categories. ignoring error so that we can return all including
@@ -848,13 +1045,27 @@ func (r *NutanixMachineReconciler) getMachineCategoryIdentifiers(rctx *nctx.Mach
 	return categoryIdentifiers
 }
 
-func (r *NutanixMachineReconciler) addBootTypeToVM(rctx *nctx.MachineContext, vmSpec *nutanixClientV3.VM) error {
+func (r *NutanixMachineReconciler) addBootTypeToVM(
+	rctx *nctx.MachineContext,
+	vmSpec *nutanixClientV3.VM,
+) error {
 	bootType := rctx.NutanixMachine.Spec.BootType
 	// Defaults to legacy if boot type is not set.
 	if bootType != "" {
 		if bootType != infrav1.NutanixBootTypeLegacy && bootType != infrav1.NutanixBootTypeUEFI {
-			errorMsg := fmt.Errorf("boot type must be %s or %s but was %s", string(infrav1.NutanixBootTypeLegacy), string(infrav1.NutanixBootTypeUEFI), bootType)
-			conditions.MarkFalse(rctx.NutanixMachine, infrav1.VMProvisionedCondition, infrav1.VMBootTypeInvalid, capiv1.ConditionSeverityError, errorMsg.Error())
+			errorMsg := fmt.Errorf(
+				"boot type must be %s or %s but was %s",
+				string(infrav1.NutanixBootTypeLegacy),
+				string(infrav1.NutanixBootTypeUEFI),
+				bootType,
+			)
+			conditions.MarkFalse(
+				rctx.NutanixMachine,
+				infrav1.VMProvisionedCondition,
+				infrav1.VMBootTypeInvalid,
+				capiv1.ConditionSeverityError,
+				errorMsg.Error(),
+			)
 			return errorMsg
 		}
 
@@ -869,7 +1080,10 @@ func (r *NutanixMachineReconciler) addBootTypeToVM(rctx *nctx.MachineContext, vm
 	return nil
 }
 
-func (r *NutanixMachineReconciler) addVMToProject(rctx *nctx.MachineContext, vmMetadata *nutanixClientV3.Metadata) error {
+func (r *NutanixMachineReconciler) addVMToProject(
+	rctx *nctx.MachineContext,
+	vmMetadata *nutanixClientV3.Metadata,
+) error {
 	log := ctrl.LoggerFrom(rctx.Context)
 	vmName := rctx.Machine.Name
 	projectRef := rctx.NutanixMachine.Spec.Project
@@ -881,15 +1095,36 @@ func (r *NutanixMachineReconciler) addVMToProject(rctx *nctx.MachineContext, vmM
 	if vmMetadata == nil {
 		errorMsg := fmt.Errorf("metadata cannot be nil when adding VM %s to project", vmName)
 		log.Error(errorMsg, "failed to add vm to project")
-		conditions.MarkFalse(rctx.NutanixMachine, infrav1.ProjectAssignedCondition, infrav1.ProjectAssignationFailed, capiv1.ConditionSeverityError, errorMsg.Error())
+		conditions.MarkFalse(
+			rctx.NutanixMachine,
+			infrav1.ProjectAssignedCondition,
+			infrav1.ProjectAssignationFailed,
+			capiv1.ConditionSeverityError,
+			errorMsg.Error(),
+		)
 		return errorMsg
 	}
 
-	projectUUID, err := GetProjectUUID(rctx.Context, rctx.NutanixClient, projectRef.Name, projectRef.UUID)
+	projectUUID, err := GetProjectUUID(
+		rctx.Context,
+		rctx.NutanixClient,
+		projectRef.Name,
+		projectRef.UUID,
+	)
 	if err != nil {
-		errorMsg := fmt.Errorf("error occurred while searching for project for VM %s: %v", vmName, err)
+		errorMsg := fmt.Errorf(
+			"error occurred while searching for project for VM %s: %v",
+			vmName,
+			err,
+		)
 		log.Error(errorMsg, "error occurred while searching for project")
-		conditions.MarkFalse(rctx.NutanixMachine, infrav1.ProjectAssignedCondition, infrav1.ProjectAssignationFailed, capiv1.ConditionSeverityError, errorMsg.Error())
+		conditions.MarkFalse(
+			rctx.NutanixMachine,
+			infrav1.ProjectAssignedCondition,
+			infrav1.ProjectAssignationFailed,
+			capiv1.ConditionSeverityError,
+			errorMsg.Error(),
+		)
 		return errorMsg
 	}
 

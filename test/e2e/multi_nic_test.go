@@ -35,90 +35,121 @@ const (
 	additionalSubnetVarKey = "NUTANIX_ADDITIONAL_SUBNET_NAME"
 )
 
-var _ = Describe("Nutanix Subnets", Label("capx-feature-test", "multi-nic", "slow", "network"), func() {
-	const specName = "cluster-multi-nic"
+var _ = Describe(
+	"Nutanix Subnets",
+	Label("capx-feature-test", "multi-nic", "slow", "network"),
+	func() {
+		const specName = "cluster-multi-nic"
 
-	var (
-		namespace        *corev1.Namespace
-		clusterName      string
-		clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult
-		cancelWatches    context.CancelFunc
-		testHelper       testHelperInterface
-	)
-
-	BeforeEach(func() {
-		testHelper = newTestHelper(e2eConfig)
-		clusterName = testHelper.generateTestClusterName(specName)
-		clusterResources = new(clusterctl.ApplyClusterTemplateAndWaitResult)
-		Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
-		namespace, cancelWatches = setupSpecNamespace(ctx, specName, bootstrapClusterProxy, artifactFolder)
-	})
-
-	AfterEach(func() {
-		dumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, artifactFolder, namespace, cancelWatches, clusterResources.Cluster, e2eConfig.GetIntervals, skipCleanup)
-	})
-
-	It("Create a cluster where machines have multiple subnets attached to the machines", func() {
-		const (
-			flavor = "no-nmt"
+		var (
+			namespace        *corev1.Namespace
+			clusterName      string
+			clusterResources *clusterctl.ApplyClusterTemplateAndWaitResult
+			cancelWatches    context.CancelFunc
+			testHelper       testHelperInterface
 		)
 
-		var nmtSubnets []infrav1.NutanixResourceIdentifier
-
-		Expect(namespace).NotTo(BeNil())
-
-		By("Creating Nutanix Machine Template with multiple subnets", func() {
-			multiNicNMT := testHelper.createDefaultNMT(clusterName, namespace.Name)
-			multiNicNMT.Spec.Template.Spec.Subnets = append(multiNicNMT.Spec.Template.Spec.Subnets,
-				testHelper.getNutanixResourceIdentifierFromE2eConfig(additionalSubnetVarKey),
+		BeforeEach(func() {
+			testHelper = newTestHelper(e2eConfig)
+			clusterName = testHelper.generateTestClusterName(specName)
+			clusterResources = new(clusterctl.ApplyClusterTemplateAndWaitResult)
+			Expect(bootstrapClusterProxy).NotTo(BeNil(), "BootstrapClusterProxy can't be nil")
+			namespace, cancelWatches = setupSpecNamespace(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
 			)
-			nmtSubnets = multiNicNMT.Spec.Template.Spec.Subnets
-			testHelper.createCapiObject(ctx, createCapiObjectParams{
-				creator:    bootstrapClusterProxy.GetClient(),
-				capiObject: multiNicNMT,
-			})
 		})
 
-		By("Creating a workload cluster", func() {
-			testHelper.deployClusterAndWait(
-				deployClusterParams{
-					clusterName:           clusterName,
-					namespace:             namespace,
-					flavor:                flavor,
-					clusterctlConfigPath:  clusterctlConfigPath,
-					artifactFolder:        artifactFolder,
-					bootstrapClusterProxy: bootstrapClusterProxy,
-				}, clusterResources)
+		AfterEach(func() {
+			dumpSpecResourcesAndCleanup(
+				ctx,
+				specName,
+				bootstrapClusterProxy,
+				artifactFolder,
+				namespace,
+				cancelWatches,
+				clusterResources.Cluster,
+				e2eConfig.GetIntervals,
+				skipCleanup,
+			)
 		})
 
-		By("Checking subnets attached to cluster machines", func() {
-			toMatchFields := make([]types.GomegaMatcher, 0)
-			for _, s := range nmtSubnets {
-				toMatchFields = append(toMatchFields, gstruct.PointTo(
-					gstruct.MatchFields(
-						gstruct.IgnoreExtras,
-						gstruct.Fields{
-							"SubnetReference": gstruct.PointTo(
-								gstruct.MatchFields(
-									gstruct.IgnoreExtras,
-									gstruct.Fields{
-										"Name": gstruct.PointTo(Equal(*s.Name)),
-									},
-								),
+		It(
+			"Create a cluster where machines have multiple subnets attached to the machines",
+			func() {
+				const (
+					flavor = "no-nmt"
+				)
+
+				var nmtSubnets []infrav1.NutanixResourceIdentifier
+
+				Expect(namespace).NotTo(BeNil())
+
+				By("Creating Nutanix Machine Template with multiple subnets", func() {
+					multiNicNMT := testHelper.createDefaultNMT(clusterName, namespace.Name)
+					multiNicNMT.Spec.Template.Spec.Subnets = append(
+						multiNicNMT.Spec.Template.Spec.Subnets,
+						testHelper.getNutanixResourceIdentifierFromE2eConfig(
+							additionalSubnetVarKey,
+						),
+					)
+					nmtSubnets = multiNicNMT.Spec.Template.Spec.Subnets
+					testHelper.createCapiObject(ctx, createCapiObjectParams{
+						creator:    bootstrapClusterProxy.GetClient(),
+						capiObject: multiNicNMT,
+					})
+				})
+
+				By("Creating a workload cluster", func() {
+					testHelper.deployClusterAndWait(
+						deployClusterParams{
+							clusterName:           clusterName,
+							namespace:             namespace,
+							flavor:                flavor,
+							clusterctlConfigPath:  clusterctlConfigPath,
+							artifactFolder:        artifactFolder,
+							bootstrapClusterProxy: bootstrapClusterProxy,
+						}, clusterResources)
+				})
+
+				By("Checking subnets attached to cluster machines", func() {
+					toMatchFields := make([]types.GomegaMatcher, 0)
+					for _, s := range nmtSubnets {
+						toMatchFields = append(toMatchFields, gstruct.PointTo(
+							gstruct.MatchFields(
+								gstruct.IgnoreExtras,
+								gstruct.Fields{
+									"SubnetReference": gstruct.PointTo(
+										gstruct.MatchFields(
+											gstruct.IgnoreExtras,
+											gstruct.Fields{
+												"Name": gstruct.PointTo(Equal(*s.Name)),
+											},
+										),
+									),
+								},
 							),
-						},
-					),
-				))
-			}
+						))
+					}
 
-			nutanixVMs := testHelper.getNutanixVMsForCluster(ctx, clusterName, namespace.Name)
-			for _, vm := range nutanixVMs {
-				vmSubnets := vm.Status.Resources.NicList
-				Expect(len(vmSubnets)).To(Equal(len(nmtSubnets)), "expected amount subnets linked to VMs to be equal to %d but was %d", len(nmtSubnets), len(vmSubnets))
-				Expect(vmSubnets).Should(ContainElements(toMatchFields))
-			}
-		})
+					nutanixVMs := testHelper.getNutanixVMsForCluster(
+						ctx,
+						clusterName,
+						namespace.Name,
+					)
+					for _, vm := range nutanixVMs {
+						vmSubnets := vm.Status.Resources.NicList
+						Expect(
+							len(vmSubnets),
+						).To(Equal(len(nmtSubnets)), "expected amount subnets linked to VMs to be equal to %d but was %d", len(nmtSubnets), len(vmSubnets))
+						Expect(vmSubnets).Should(ContainElements(toMatchFields))
+					}
+				})
 
-		By("PASSED!")
-	})
-})
+				By("PASSED!")
+			},
+		)
+	},
+)

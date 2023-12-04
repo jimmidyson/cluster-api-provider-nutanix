@@ -52,23 +52,46 @@ func Byf(format string, a ...interface{}) {
 	By(fmt.Sprintf(format, a...))
 }
 
-func setupSpecNamespace(ctx context.Context, specName string, clusterProxy framework.ClusterProxy, artifactFolder string) (*corev1.Namespace, context.CancelFunc) {
+func setupSpecNamespace(
+	ctx context.Context,
+	specName string,
+	clusterProxy framework.ClusterProxy,
+	artifactFolder string,
+) (*corev1.Namespace, context.CancelFunc) {
 	Byf("Creating a namespace for hosting the %q test spec", specName)
-	namespace, cancelWatches := framework.CreateNamespaceAndWatchEvents(ctx, framework.CreateNamespaceAndWatchEventsInput{
-		Creator:   clusterProxy.GetClient(),
-		ClientSet: clusterProxy.GetClientSet(),
-		Name:      fmt.Sprintf("%s-%s", specName, util.RandomString(6)),
-		LogFolder: filepath.Join(artifactFolder, "clusters", clusterProxy.GetName()),
-	})
+	namespace, cancelWatches := framework.CreateNamespaceAndWatchEvents(
+		ctx,
+		framework.CreateNamespaceAndWatchEventsInput{
+			Creator:   clusterProxy.GetClient(),
+			ClientSet: clusterProxy.GetClientSet(),
+			Name:      fmt.Sprintf("%s-%s", specName, util.RandomString(6)),
+			LogFolder: filepath.Join(artifactFolder, "clusters", clusterProxy.GetName()),
+		},
+	)
 
 	return namespace, cancelWatches
 }
 
-func dumpSpecResourcesAndCleanup(ctx context.Context, specName string, clusterProxy framework.ClusterProxy, artifactFolder string, namespace *corev1.Namespace, cancelWatches context.CancelFunc, cluster *clusterv1.Cluster, intervalsGetter func(spec, key string) []interface{}, skipCleanup bool) {
+func dumpSpecResourcesAndCleanup(
+	ctx context.Context,
+	specName string,
+	clusterProxy framework.ClusterProxy,
+	artifactFolder string,
+	namespace *corev1.Namespace,
+	cancelWatches context.CancelFunc,
+	cluster *clusterv1.Cluster,
+	intervalsGetter func(spec, key string) []interface{},
+	skipCleanup bool,
+) {
 	Byf("Dumping logs from the %q workload cluster", cluster.Name)
 
 	// Dump all the logs from the workload cluster before deleting them.
-	clusterProxy.CollectWorkloadClusterLogs(ctx, cluster.Namespace, cluster.Name, filepath.Join(artifactFolder, "clusters", cluster.Name))
+	clusterProxy.CollectWorkloadClusterLogs(
+		ctx,
+		cluster.Namespace,
+		cluster.Name,
+		filepath.Join(artifactFolder, "clusters", cluster.Name),
+	)
 
 	Byf("Dumping all the Cluster API resources in the %q namespace", namespace.Name)
 
