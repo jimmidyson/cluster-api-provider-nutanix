@@ -42,8 +42,10 @@ jobs:
 
       - name: Codecov
         uses: codecov/codecov-action@v3
+        if: ${{ github.owner == 'nutanix-cloud-native' }}
         with:
           fail_ci_if_error: true
+          file: coverage.out
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.14.0
@@ -84,3 +86,4 @@ jobs:
           reporter: github-pr-review
           golangci_lint_version: ${{ env.GOLANGCI_LINT_VERSION }}
           go_version: ${{ env.GO_VERSION }}
+          golangci_lint_flags: --timeout=10m
