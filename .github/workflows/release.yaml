@@ -34,6 +34,7 @@ jobs:
       run: |
         devbox run -- bash -ec "cd config/manager && kustomize edit set image controller=${KO_DOCKER_REPO}:${{ github.ref_name }}"
         devbox run -- make release-manifests
+        git checkout config/manager/kustomization.yaml
         devbox run -- make release
       env:
         KO_DOCKER_REPO: ghcr.io/${{ github.repository }}/controller
