@@ -27,6 +27,7 @@ import (
 	"github.com/nutanix-cloud-native/prism-go-client/environment"
 	credentialTypes "github.com/nutanix-cloud-native/prism-go-client/environment/credentials"
 	kubernetesEnv "github.com/nutanix-cloud-native/prism-go-client/environment/providers/kubernetes"
+	localEnv "github.com/nutanix-cloud-native/prism-go-client/environment/providers/local"
 	envTypes "github.com/nutanix-cloud-native/prism-go-client/environment/types"
 	nutanixClientV3 "github.com/nutanix-cloud-native/prism-go-client/v3"
 	coreinformers "k8s.io/client-go/informers/core/v1"
@@ -65,62 +66,69 @@ func (n *NutanixClientHelper) GetClientFromEnvironment(ctx context.Context, nuta
 	// Create a list of env providers
 	providers := make([]envTypes.Provider, 0)
 
-	// If PrismCentral is set, add the required env provider
-	prismCentralInfo := nutanixCluster.Spec.PrismCentral
-	if prismCentralInfo != nil {
-		if prismCentralInfo.Address == "" {
-			return nil, ErrPrismAddressNotSet
+	// If LOCAL_PROVIDER env var is set, use the Local env provider
+	if _, found := os.LookupEnv("LOCAL_PROVIDER"); found {
+		providers = append(providers, localEnv.NewProvider())
+	} else {
+		// If PrismCentral is set, add the required env provider
+		prismCentralInfo := nutanixCluster.Spec.PrismCentral
+		if prismCentralInfo != nil {
+			if prismCentralInfo.Address == "" {
+				return nil, ErrPrismAddressNotSet
+			}
+			if prismCentralInfo.Port == 0 {
+				return nil, ErrPrismPortNotSet
+			}
+			credentialRef, err := GetCredentialRefForCluster(nutanixCluster)
+			if err != nil {
+				//nolint:wrapcheck // error is alredy wrapped
+				return nil, err
+			}
+			// If namespace is empty, use the cluster namespace
+			if credentialRef.Namespace == "" {
+				credentialRef.Namespace = nutanixCluster.Namespace
+			}
+			additionalTrustBundleRef := prismCentralInfo.AdditionalTrustBundle
+			if additionalTrustBundleRef != nil &&
+				additionalTrustBundleRef.Kind == credentialTypes.NutanixTrustBundleKindConfigMap &&
+				additionalTrustBundleRef.Namespace == "" {
+				additionalTrustBundleRef.Namespace = nutanixCluster.Namespace
+			}
+			providers = append(providers, kubernetesEnv.NewProvider(
+				*nutanixCluster.Spec.PrismCentral,
+				n.secretInformer,
+				n.configMapInformer))
+		} else {
+			log.Info(fmt.Sprintf("[WARNING] prismCentral attribute was not set on NutanixCluster %s in namespace %s. Defaulting to CAPX manager credentials", nutanixCluster.Name, nutanixCluster.Namespace))
 		}
-		if prismCentralInfo.Port == 0 {
-			return nil, ErrPrismPortNotSet
-		}
-		credentialRef, err := GetCredentialRefForCluster(nutanixCluster)
+
+		// Add env provider for CAPX manager
+		npe, err := n.getManagerNutanixPrismEndpoint()
 		if err != nil {
-			//nolint:wrapcheck // error is alredy wrapped
-			return nil, err
+			return nil, fmt.Errorf("failed to create prism endpoint: %w", err)
 		}
-		// If namespace is empty, use the cluster namespace
-		if credentialRef.Namespace == "" {
-			credentialRef.Namespace = nutanixCluster.Namespace
+		// If namespaces is not set, set it to the namespace of the CAPX manager
+		if npe.CredentialRef.Namespace == "" {
+			capxNamespace := os.Getenv(capxNamespaceKey)
+			if capxNamespace == "" {
+				return nil, fmt.Errorf("failed to retrieve capx-namespace. Make sure %s env variable is set", capxNamespaceKey)
+			}
+			npe.CredentialRef.Namespace = capxNamespace
 		}
-		additionalTrustBundleRef := prismCentralInfo.AdditionalTrustBundle
-		if additionalTrustBundleRef != nil &&
-			additionalTrustBundleRef.Kind == credentialTypes.NutanixTrustBundleKindConfigMap &&
-			additionalTrustBundleRef.Namespace == "" {
-			additionalTrustBundleRef.Namespace = nutanixCluster.Namespace
+		if npe.AdditionalTrustBundle != nil && npe.AdditionalTrustBundle.Namespace == "" {
+			capxNamespace := os.Getenv(capxNamespaceKey)
+			if capxNamespace == "" {
+				return nil, fmt.Errorf("failed to retrieve capx-namespace. Make sure %s env variable is set", capxNamespaceKey)
+			}
+			npe.AdditionalTrustBundle.Namespace = capxNamespace
 		}
 		providers = append(providers, kubernetesEnv.NewProvider(
-			*nutanixCluster.Spec.PrismCentral,
+			*npe,
 			n.secretInformer,
 			n.configMapInformer))
-	} else {
-		log.Info(fmt.Sprintf("[WARNING] prismCentral attribute was not set on NutanixCluster %s in namespace %s. Defaulting to CAPX manager credentials", nutanixCluster.Name, nutanixCluster.Namespace))
+
 	}
 
-	// Add env provider for CAPX manager
-	npe, err := n.getManagerNutanixPrismEndpoint()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create prism endpoint: %w", err)
-	}
-	// If namespaces is not set, set it to the namespace of the CAPX manager
-	if npe.CredentialRef.Namespace == "" {
-		capxNamespace := os.Getenv(capxNamespaceKey)
-		if capxNamespace == "" {
-			return nil, fmt.Errorf("failed to retrieve capx-namespace. Make sure %s env variable is set", capxNamespaceKey)
-		}
-		npe.CredentialRef.Namespace = capxNamespace
-	}
-	if npe.AdditionalTrustBundle != nil && npe.AdditionalTrustBundle.Namespace == "" {
-		capxNamespace := os.Getenv(capxNamespaceKey)
-		if capxNamespace == "" {
-			return nil, fmt.Errorf("failed to retrieve capx-namespace. Make sure %s env variable is set", capxNamespaceKey)
-		}
-		npe.AdditionalTrustBundle.Namespace = capxNamespace
-	}
-	providers = append(providers, kubernetesEnv.NewProvider(
-		*npe,
-		n.secretInformer,
-		n.configMapInformer))
 	// init env with providers
 	env := environment.NewEnvironment(
 		providers...,
