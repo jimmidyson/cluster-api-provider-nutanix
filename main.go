@@ -82,6 +82,7 @@ func main() {
 		enableLeaderElection    bool
 		probeAddr               string
 		maxConcurrentReconciles int
+		namespace               string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -94,6 +95,7 @@ func main() {
 		"max-concurrent-reconciles",
 		defaultMaxConcurrentReconciles,
 		"The maximum number of allowed, concurrent reconciles.")
+	flag.StringVar(&namespace, "namespace", "", "The namespace in which to reconcile resources. Empty string, the default value, means all namespaces.")
 
 	opts := zap.Options{
 		TimeEncoder: zapcore.RFC3339TimeEncoder,
@@ -111,6 +113,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "f265110d.cluster.x-k8s.io",
+		Namespace:              namespace,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create manager")
@@ -127,7 +130,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	informerFactory := informers.NewSharedInformerFactory(clientset, time.Minute)
+	informerFactory := informers.NewSharedInformerFactoryWithOptions(clientset, time.Minute, informers.WithNamespace(namespace))
 	secretInformer := informerFactory.Core().V1().Secrets()
 	informer := secretInformer.Informer()
 	go informer.Run(ctx.Done())
