@@ -274,6 +274,11 @@ func (r *NutanixClusterReconciler) reconcileNormal(rctx *nctx.ClusterContext) (r
 		return reconcile.Result{}, err
 	}
 
+	// If this is externally managed, then return and allow external process to set this to ready.
+	if annotations.IsExternallyManaged(rctx.NutanixCluster) {
+		return reconcile.Result{}, nil
+	}
+
 	rctx.NutanixCluster.Status.Ready = true
 	return reconcile.Result{}, nil
 }
