@@ -19,7 +19,6 @@ package context
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	infrav1 "github.com/nutanix-cloud-native/cluster-api-provider-nutanix/api/v1beta1"
 
@@ -27,7 +26,6 @@ import (
 	prismclientv3 "github.com/nutanix-cloud-native/prism-go-client/v3"
 	"k8s.io/utils/ptr"
 	capiv1beta2 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	"sigs.k8s.io/cluster-api/controllers/remote"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -44,11 +42,6 @@ const (
 	// MetroNodeGroupNameLabel is the Datastore key used to pass the MetroSite's groupNameLabel
 	// value within a reconcile cycle.
 	MetroNodeGroupNameLabel = "metro-node-group-name-label"
-)
-
-var (
-	RemoteClientCache = map[ctlclient.ObjectKey]ctlclient.Client{}
-	cacheLock         = &sync.Mutex{}
 )
 
 // ClusterContext is a context used with a NutanixCluster reconciler
@@ -133,27 +126,4 @@ func (clctx *MachineContext) SetFailureStatus(failureReason string, failureMessa
 	log.Error(failureMessage, fmt.Sprintf("machine failed: %s", failureReason))
 	clctx.NutanixMachine.Status.FailureMessage = ptr.To(fmt.Sprintf("%v", failureMessage))
 	clctx.NutanixMachine.Status.FailureReason = &failureReason
-}
-
-func GetRemoteClient(ctx context.Context, client ctlclient.Client, clusterKey ctlclient.ObjectKey) (ctlclient.Client, error) {
-	cacheLock.Lock()
-	defer cacheLock.Unlock()
-	remoteClient, ok := RemoteClientCache[clusterKey]
-	if ok {
-		return remoteClient, nil
-	}
-	remoteClient, err := remote.NewClusterClient(ctx, "remote-cluster-cache", client, clusterKey)
-	if err != nil {
-		return nil, err
-	}
-	RemoteClientCache[clusterKey] = remoteClient
-
-	return remoteClient, nil
-}
-
-func RemoveRemoteClient(clusterKey ctlclient.ObjectKey) {
-	cacheLock.Lock()
-	defer cacheLock.Unlock()
-
-	delete(RemoteClientCache, clusterKey)
 }

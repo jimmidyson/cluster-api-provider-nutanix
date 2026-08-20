@@ -27,7 +27,6 @@ import (
 	kapierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	apitypes "k8s.io/apimachinery/pkg/types"
 	kutilerrors "k8s.io/apimachinery/pkg/util/errors"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/utils/ptr"
@@ -333,13 +332,6 @@ func (r *NutanixClusterReconciler) reconcileDelete(rctx *nctx.ClusterContext) (r
 	// Remove the finalizer from the NutanixCluster object
 	ctrlutil.RemoveFinalizer(rctx.NutanixCluster, infrav1.NutanixClusterFinalizer)
 	ctrlutil.RemoveFinalizer(rctx.NutanixCluster, infrav1.DeprecatedNutanixClusterFinalizer)
-
-	// Remove the workload cluster client from cache
-	clusterKey := apitypes.NamespacedName{
-		Namespace: rctx.Cluster.Namespace,
-		Name:      rctx.Cluster.Name,
-	}
-	nctx.RemoveRemoteClient(clusterKey)
 
 	return reconcile.Result{}, nil
 }
