@@ -39,7 +39,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	v1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/utils/ptr"
 	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1" //nolint:staticcheck // suppress complaining on Deprecated package
 	capiv1beta2 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -1154,11 +1153,11 @@ func GetStorageContainerInCluster(ctx context.Context, client *v4Converged.Clien
 	return &storageContainers[0], nil
 }
 
-func getPrismCentralClientForCluster(ctx context.Context, cluster *infrav1.NutanixCluster, secretInformer v1.SecretInformer, mapInformer v1.ConfigMapInformer) (*prismclientv3.Client, error) {
+func getPrismCentralClientForCluster(ctx context.Context, cluster *infrav1.NutanixCluster, creds credentialSource) (*prismclientv3.Client, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	log.V(1).Info("Get client helper")
-	clientHelper := nutanixclient.NewHelper(secretInformer, mapInformer)
+	clientHelper := creds.helper()
 
 	log.V(1).Info("Build management endpoint")
 	managementEndpoint, err := clientHelper.BuildManagementEndpoint(ctx, cluster)
@@ -1200,10 +1199,10 @@ func getPrismCentralClientForCluster(ctx context.Context, cluster *infrav1.Nutan
 	return v3Client, nil
 }
 
-func getPrismCentralConvergedV4ClientForCluster(ctx context.Context, cluster *infrav1.NutanixCluster, secretInformer v1.SecretInformer, mapInformer v1.ConfigMapInformer) (*v4Converged.Client, error) {
+func getPrismCentralConvergedV4ClientForCluster(ctx context.Context, cluster *infrav1.NutanixCluster, creds credentialSource) (*v4Converged.Client, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	clientHelper := nutanixclient.NewHelper(secretInformer, mapInformer)
+	clientHelper := creds.helper()
 	managementEndpoint, err := clientHelper.BuildManagementEndpoint(ctx, cluster)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("error occurred while getting management endpoint for cluster %q", cluster.GetNamespacedName()))

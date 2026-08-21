@@ -1269,7 +1269,7 @@ func TestNutanixMachineReconciler_ConvergedClient(t *testing.T) {
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
 		// Test the converged client function directly
-		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, secretInformer, mapInformer)
+		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.Error(t, err)
 	})
 
@@ -1322,7 +1322,7 @@ func TestNutanixMachineReconciler_ConvergedClient(t *testing.T) {
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
 		// Test the converged client function directly
-		client, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, secretInformer, mapInformer)
+		client, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.NoError(t, err)
 		assert.NotNil(t, client)
 	})
@@ -1376,7 +1376,7 @@ func TestNutanixMachineReconciler_ConvergedClient(t *testing.T) {
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
 		// Test the converged client function directly
-		_, err = getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, secretInformer, mapInformer)
+		_, err = getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.Error(t, err)
 	})
 }
@@ -1434,7 +1434,7 @@ func TestNutanixMachineReconciler_ConvergedClientIntegration(t *testing.T) {
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
 		// Test the converged client function directly
-		client, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, secretInformer, mapInformer)
+		client, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.NoError(t, err)
 		assert.NotNil(t, client)
 	})
@@ -1476,7 +1476,7 @@ func TestNutanixMachineReconciler_ConvergedClientIntegration(t *testing.T) {
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
 		// Test the converged client function directly
-		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, secretInformer, mapInformer)
+		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "secret not found")
 	})

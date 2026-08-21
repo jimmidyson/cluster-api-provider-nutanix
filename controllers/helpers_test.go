@@ -222,7 +222,7 @@ func TestGetPrismCentralClientForCluster(t *testing.T) {
 		mapInformer := mockk8sclient.NewMockConfigMapInformer(ctrl)
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
-		_, err := getPrismCentralClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		_, err := getPrismCentralClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.Error(t, err)
 	})
 
@@ -252,7 +252,7 @@ func TestGetPrismCentralClientForCluster(t *testing.T) {
 		mapInformer := mockk8sclient.NewMockConfigMapInformer(ctrl)
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
-		_, err = getPrismCentralClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		_, err = getPrismCentralClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.Error(t, err)
 	})
 
@@ -290,7 +290,7 @@ func TestGetPrismCentralClientForCluster(t *testing.T) {
 		mapInformer := mockk8sclient.NewMockConfigMapInformer(ctrl)
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
-		_, err = getPrismCentralClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		_, err = getPrismCentralClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.NoError(t, err)
 	})
 }
@@ -322,7 +322,7 @@ func TestGetPrismCentralConvergedV4ClientForCluster(t *testing.T) {
 		mapInformer := mockk8sclient.NewMockConfigMapInformer(ctrl)
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
-		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.Error(t, err)
 	})
 
@@ -353,7 +353,7 @@ func TestGetPrismCentralConvergedV4ClientForCluster(t *testing.T) {
 		mapInformer := mockk8sclient.NewMockConfigMapInformer(ctrl)
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
-		_, err = getPrismCentralConvergedV4ClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		_, err = getPrismCentralConvergedV4ClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.Error(t, err)
 	})
 
@@ -391,7 +391,7 @@ func TestGetPrismCentralConvergedV4ClientForCluster(t *testing.T) {
 		mapInformer := mockk8sclient.NewMockConfigMapInformer(ctrl)
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
-		_, err = getPrismCentralConvergedV4ClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		_, err = getPrismCentralConvergedV4ClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.NoError(t, err)
 	})
 
@@ -429,7 +429,7 @@ func TestGetPrismCentralConvergedV4ClientForCluster(t *testing.T) {
 		mapInformer := mockk8sclient.NewMockConfigMapInformer(ctrl)
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
-		client, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		client, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.NoError(t, err)
 		assert.NotNil(t, client)
 	})
@@ -468,12 +468,12 @@ func TestGetPrismCentralConvergedV4ClientForCluster(t *testing.T) {
 		secretInformer.EXPECT().Lister().Return(secretLister).Times(2)
 
 		// First call - should create and cache the client
-		client1, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		client1, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.NoError(t, err)
 		assert.NotNil(t, client1)
 
 		// Second call - should return cached client
-		client2, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		client2, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.NoError(t, err)
 		assert.NotNil(t, client2)
 		assert.Equal(t, client1, client2) // Should be the same cached instance
@@ -501,7 +501,7 @@ func TestGetPrismCentralConvergedV4ClientForCluster_EdgeCases(t *testing.T) {
 		secretInformer := mockk8sclient.NewMockSecretInformer(ctrl)
 		mapInformer := mockk8sclient.NewMockConfigMapInformer(ctrl)
 
-		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "error building an environment provider")
 	})
@@ -524,7 +524,7 @@ func TestGetPrismCentralConvergedV4ClientForCluster_EdgeCases(t *testing.T) {
 		secretInformer := mockk8sclient.NewMockSecretInformer(ctrl)
 		mapInformer := mockk8sclient.NewMockConfigMapInformer(ctrl)
 
-		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "error building an environment provider")
 	})
@@ -564,7 +564,7 @@ func TestGetPrismCentralConvergedV4ClientForCluster_EdgeCases(t *testing.T) {
 		secretLister.EXPECT().Secrets("test-ns").Return(secretNamespaceLister)
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
-		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.Error(t, err)
 	})
 
@@ -603,7 +603,7 @@ func TestGetPrismCentralConvergedV4ClientForCluster_EdgeCases(t *testing.T) {
 		secretLister.EXPECT().Secrets("test-ns").Return(secretNamespaceLister)
 		secretInformer.EXPECT().Lister().Return(secretLister)
 
-		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, secretInformer, mapInformer)
+		_, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, credentialSource{SecretInformer: secretInformer, ConfigMapInformer: mapInformer})
 		assert.Error(t, err)
 	})
 }

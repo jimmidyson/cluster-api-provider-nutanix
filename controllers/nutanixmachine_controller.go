@@ -50,6 +50,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -88,8 +89,12 @@ type NutanixMachineReconciler struct {
 	APIReader         client.Reader
 	SecretInformer    coreinformers.SecretInformer
 	ConfigMapInformer coreinformers.ConfigMapInformer
-	Scheme            *runtime.Scheme
-	controllerConfig  *ControllerConfig
+	// CredentialReader, when set, reads Prism Central credentials through a
+	// cluster-aware client instead of the informers above. A fleet-wide setup
+	// must set it; see credentialSource.
+	CredentialReader ctlclient.Reader
+	Scheme           *runtime.Scheme
+	controllerConfig *ControllerConfig
 }
 
 func NewNutanixMachineReconciler(client client.Client, secretInformer coreinformers.SecretInformer, configMapInformer coreinformers.ConfigMapInformer, scheme *runtime.Scheme, copts ...ControllerConfigOpts) (*NutanixMachineReconciler, error) {
@@ -272,13 +277,13 @@ func (r *NutanixMachineReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	log.Info(fmt.Sprintf("Reconciling NutanixMachine %s in namespace %s", ntxMachine.Name, ntxMachine.Namespace))
 	// Create a Nutanix client for the NutanixCluster.
-	v3Client, err := getPrismCentralClientForCluster(ctx, ntxCluster, r.SecretInformer, r.ConfigMapInformer)
+	v3Client, err := getPrismCentralClientForCluster(ctx, ntxCluster, r.credentials())
 	if err != nil {
 		log.Error(err, "error occurred while fetching prism central client")
 		return reconcile.Result{}, err
 	}
 
-	convergedClient, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntxCluster, r.SecretInformer, r.ConfigMapInformer)
+	convergedClient, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntxCluster, r.credentials())
 	if err != nil {
 		log.Error(err, "error occurred while fetching prism central converged client")
 		return reconcile.Result{}, err
@@ -2257,4 +2262,13 @@ func (r *NutanixMachineReconciler) GetSubnetAndPEUUIDs(rctx *nctx.MachineContext
 	}
 
 	return peUUID, subnetUUIDs, nil
+}
+
+// credentials is where this reconciler reads Prism Central credentials from.
+func (r *NutanixMachineReconciler) credentials() credentialSource {
+	return credentialSource{
+		Reader:            r.CredentialReader,
+		SecretInformer:    r.SecretInformer,
+		ConfigMapInformer: r.ConfigMapInformer,
+	}
 }

@@ -402,7 +402,7 @@ func Test_buildProviderFromNutanixCluster(t *testing.T) {
 		tt := tt // Capture range variable.
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			provider, err := tt.helper.buildProviderFromNutanixCluster(tt.nutanixCluster)
+			provider, err := tt.helper.buildProviderFromNutanixCluster(t.Context(), tt.nutanixCluster)
 			if tt.expectProviderToBeNil {
 				assert.Nil(t, provider)
 			} else {
@@ -525,7 +525,7 @@ func Test_buildProviderFromFile(t *testing.T) {
 			for k, v := range tt.envs {
 				t.Setenv(k, v)
 			}
-			provider, err := tt.helper.buildProviderFromFile()
+			provider, err := tt.helper.buildProviderFromFile(t.Context())
 			if tt.expectProviderToBeNil {
 				assert.Nil(t, provider)
 			} else {

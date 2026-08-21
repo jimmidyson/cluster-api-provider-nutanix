@@ -41,6 +41,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -57,8 +58,12 @@ type NutanixClusterReconciler struct {
 	Client            client.Client
 	SecretInformer    coreinformers.SecretInformer
 	ConfigMapInformer coreinformers.ConfigMapInformer
-	Scheme            *runtime.Scheme
-	controllerConfig  *ControllerConfig
+	// CredentialReader, when set, reads Prism Central credentials through a
+	// cluster-aware client instead of the informers above. A fleet-wide setup
+	// must set it; see credentialSource.
+	CredentialReader ctlclient.Reader
+	Scheme           *runtime.Scheme
+	controllerConfig *ControllerConfig
 }
 
 func NewNutanixClusterReconciler(client client.Client, secretInformer coreinformers.SecretInformer, configMapInformer coreinformers.ConfigMapInformer, scheme *runtime.Scheme, copts ...ControllerConfigOpts) (*NutanixClusterReconciler, error) {
@@ -238,12 +243,12 @@ func (r *NutanixClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return reconcile.Result{}, err
 	}
 
-	v3Client, err := getPrismCentralClientForCluster(ctx, cluster, r.SecretInformer, r.ConfigMapInformer)
+	v3Client, err := getPrismCentralClientForCluster(ctx, cluster, r.credentials())
 	if err != nil {
 		log.Error(err, "error occurred while fetching prism central client")
 		return reconcile.Result{}, err
 	}
-	convergedClient, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, r.SecretInformer, r.ConfigMapInformer)
+	convergedClient, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, r.credentials())
 	if err != nil {
 		log.Error(err, "error occurred while fetching prism central converged client")
 		return reconcile.Result{}, err
@@ -922,4 +927,13 @@ func getPrismCentralCredentialRefForCluster(nutanixCluster *infrav1.NutanixClust
 		return nil, fmt.Errorf("cannot get credential reference if nutanix cluster object is nil")
 	}
 	return nutanixCluster.GetPrismCentralCredentialRef()
+}
+
+// credentials is where this reconciler reads Prism Central credentials from.
+func (r *NutanixClusterReconciler) credentials() credentialSource {
+	return credentialSource{
+		Reader:            r.CredentialReader,
+		SecretInformer:    r.SecretInformer,
+		ConfigMapInformer: r.ConfigMapInformer,
+	}
 }

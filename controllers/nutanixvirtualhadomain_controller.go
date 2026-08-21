@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -67,8 +68,12 @@ type NutanixVirtualHADomainReconciler struct {
 	client.Client
 	SecretInformer    coreinformers.SecretInformer
 	ConfigMapInformer coreinformers.ConfigMapInformer
-	Scheme            *runtime.Scheme
-	controllerConfig  *ControllerConfig
+	// CredentialReader, when set, reads Prism Central credentials through a
+	// cluster-aware client instead of the informers above. A fleet-wide setup
+	// must set it; see credentialSource.
+	CredentialReader ctlclient.Reader
+	Scheme           *runtime.Scheme
+	controllerConfig *ControllerConfig
 }
 
 func NewNutanixVirtualHADomainReconciler(client client.Client, secretInformer coreinformers.SecretInformer, configMapInformer coreinformers.ConfigMapInformer, scheme *runtime.Scheme, copts ...ControllerConfigOpts) (*NutanixVirtualHADomainReconciler, error) {
@@ -176,12 +181,12 @@ func (r *NutanixVirtualHADomainReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
-	v3Client, err := getPrismCentralClientForCluster(ctx, ntnxCluster, r.SecretInformer, r.ConfigMapInformer)
+	v3Client, err := getPrismCentralClientForCluster(ctx, ntnxCluster, r.credentials())
 	if err != nil {
 		log.Error(err, "error occurred while fetching prism central client")
 		return reconcile.Result{}, err
 	}
-	convergedClient, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, r.SecretInformer, r.ConfigMapInformer)
+	convergedClient, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntnxCluster, r.credentials())
 	if err != nil {
 		log.Error(err, "error occurred while fetching prism central converged client")
 		return reconcile.Result{}, err
@@ -1087,4 +1092,13 @@ func findRecoveryPlanByName(rctx *nctx.VHADomainContext, name string) (*v3models
 		}
 	}
 	return nil, nil
+}
+
+// credentials is where this reconciler reads Prism Central credentials from.
+func (r *NutanixVirtualHADomainReconciler) credentials() credentialSource {
+	return credentialSource{
+		Reader:            r.CredentialReader,
+		SecretInformer:    r.SecretInformer,
+		ConfigMapInformer: r.ConfigMapInformer,
+	}
 }

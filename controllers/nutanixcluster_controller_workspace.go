@@ -61,6 +61,9 @@ func (r *NutanixClusterReconciler) SetupWithMulticlusterManager(
 	if r.Client == nil {
 		return fmt.Errorf("Client must not be nil")
 	}
+	if r.CredentialReader == nil {
+		return fmt.Errorf("CredentialReader must not be nil: a fleet-wide controller resolves Prism Central credentials per workspace, and the informers address one API server")
+	}
 
 	scheme := mgr.GetLocalManager().GetScheme()
 	predicateLog := ctrl.LoggerFrom(ctx).WithValues("controller", "nutanixcluster")

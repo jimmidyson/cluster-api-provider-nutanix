@@ -28,6 +28,7 @@ import (
 	envTypes "github.com/nutanix-cloud-native/prism-go-client/environment/types"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	infrav1 "github.com/nutanix-cloud-native/cluster-api-provider-nutanix/api/v1beta1"
 )
@@ -47,6 +48,10 @@ type NutanixClientHelper struct {
 	secretInformer    coreinformers.SecretInformer
 	configMapInformer coreinformers.ConfigMapInformer
 
+	// reader, when set, replaces the informers as the source of the
+	// credentials Secret and trust bundle ConfigMap. See NewWorkspaceHelper.
+	reader ctlclient.Reader
+
 	managerNutanixPrismEndpointReader func() (*credentials.NutanixPrismEndpoint, error)
 }
 
@@ -54,6 +59,23 @@ func NewHelper(secretInformer coreinformers.SecretInformer, cmInformer coreinfor
 	return &NutanixClientHelper{
 		secretInformer:                    secretInformer,
 		configMapInformer:                 cmInformer,
+		managerNutanixPrismEndpointReader: readManagerNutanixPrismEndpointFromDefaultFile,
+	}
+}
+
+// NewWorkspaceHelper is NewHelper for a controller serving many logical
+// clusters, reading credentials through a cluster-aware client rather than
+// through shared informers.
+//
+// The informers cannot serve a fleet: they are built over one clientset, and
+// Lister().Secrets(ns).Get(name) takes no context, so there is nowhere to say
+// which workspace's Secret is wanted. Two workspaces holding a credentials
+// Secret of the same namespace and name would resolve to whichever the
+// informer happened to be watching. A reader resolves per call against the
+// cluster named in the context it is given.
+func NewWorkspaceHelper(reader ctlclient.Reader) *NutanixClientHelper {
+	return &NutanixClientHelper{
+		reader:                            reader,
 		managerNutanixPrismEndpointReader: readManagerNutanixPrismEndpointFromDefaultFile,
 	}
 }
@@ -74,7 +96,7 @@ func (n *NutanixClientHelper) BuildManagementEndpoint(ctx context.Context, nutan
 
 	// Attempt to build a provider from the NutanixCluster object
 	log.Info("Attempt to build provider from NutanixCluster")
-	providerForNutanixCluster, err := n.buildProviderFromNutanixCluster(nutanixCluster)
+	providerForNutanixCluster, err := n.buildProviderFromNutanixCluster(ctx, nutanixCluster)
 	if err != nil {
 		return nil, fmt.Errorf("error building an environment provider from NutanixCluster: %w", err)
 	}
@@ -84,7 +106,7 @@ func (n *NutanixClientHelper) BuildManagementEndpoint(ctx context.Context, nutan
 		log.Info(fmt.Sprintf("[WARNING] prismCentral attribute was not set on NutanixCluster %s in namespace %s. Defaulting to CAPX manager credentials", nutanixCluster.Name, nutanixCluster.Namespace))
 		// Fallback to building a provider using prism central information from the CAPX management cluster
 		// using information from /etc/nutanix/config/prismCentral
-		providerForLocalFile, err := n.buildProviderFromFile()
+		providerForLocalFile, err := n.buildProviderFromFile(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("error building an environment provider from file: %w", err)
 		}
@@ -108,7 +130,7 @@ func (n *NutanixClientHelper) BuildManagementEndpoint(ctx context.Context, nutan
 // buildProviderFromNutanixCluster will return an envTypes.Provider with info from the provided NutanixCluster.
 // It will return nil if nutanixCluster.Spec.PrismCentral is nil.
 // It will return an error if required information is missing.
-func (n *NutanixClientHelper) buildProviderFromNutanixCluster(nutanixCluster *infrav1.NutanixCluster) (envTypes.Provider, error) {
+func (n *NutanixClientHelper) buildProviderFromNutanixCluster(ctx context.Context, nutanixCluster *infrav1.NutanixCluster) (envTypes.Provider, error) {
 	prismCentralInfo := nutanixCluster.Spec.PrismCentral
 	if prismCentralInfo == nil {
 		return nil, nil
@@ -137,12 +159,22 @@ func (n *NutanixClientHelper) buildProviderFromNutanixCluster(nutanixCluster *in
 		additionalTrustBundleRef.Namespace = nutanixCluster.Namespace
 	}
 
-	return kubernetesEnv.NewProvider(*prismCentralInfo, n.secretInformer, n.configMapInformer), nil
+	return n.provider(ctx, *prismCentralInfo), nil
+}
+
+// provider picks the source the credentials are read from: a cluster-aware
+// reader when one was supplied, and the SDK's informer-backed provider
+// otherwise, which is what a single-cluster CAPX still uses.
+func (n *NutanixClientHelper) provider(ctx context.Context, endpoint credentials.NutanixPrismEndpoint) envTypes.Provider {
+	if n.reader != nil {
+		return NewWorkspaceProvider(ctx, n.reader, endpoint)
+	}
+	return kubernetesEnv.NewProvider(endpoint, n.secretInformer, n.configMapInformer)
 }
 
 // buildProviderFromFile will return an envTypes.Provider with info from the provided file.
 // It will return an error if required information is missing.
-func (n *NutanixClientHelper) buildProviderFromFile() (envTypes.Provider, error) {
+func (n *NutanixClientHelper) buildProviderFromFile(ctx context.Context) (envTypes.Provider, error) {
 	npe, err := n.managerNutanixPrismEndpointReader()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create prism endpoint: %w", err)
@@ -163,7 +195,7 @@ func (n *NutanixClientHelper) buildProviderFromFile() (envTypes.Provider, error)
 		npe.AdditionalTrustBundle.Namespace = capxNamespace
 	}
 
-	return kubernetesEnv.NewProvider(*npe, n.secretInformer, n.configMapInformer), nil
+	return n.provider(ctx, *npe), nil
 }
 
 // readManagerNutanixPrismEndpoint reads the default config file and unmarshalls it into NutanixPrismEndpoint.
