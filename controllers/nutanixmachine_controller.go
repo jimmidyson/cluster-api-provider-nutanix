@@ -322,7 +322,7 @@ func (r *NutanixMachineReconciler) reconcileDelete(rctx *nctx.MachineContext) (r
 	ctx := rctx.Context
 	log := ctrl.LoggerFrom(ctx)
 	convergedClient := rctx.ConvergedClient
-	vmName := rctx.Machine.Name
+	vmName := scopedName(logicalClusterOf(rctx.Cluster), rctx.Machine.Name)
 	log.Info(fmt.Sprintf("Handling deletion of VM: %s", vmName))
 	v1beta1conditions.MarkFalse(rctx.NutanixMachine, infrav1.VMProvisionedCondition, capiv1beta1.DeletingReason, capiv1beta1.ConditionSeverityInfo, "")
 	v1beta2conditions.Set(rctx.NutanixMachine, metav1.Condition{
@@ -1584,7 +1584,11 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*vm
 	var err error
 	ctx := rctx.Context
 	log := ctrl.LoggerFrom(ctx)
-	vmName := rctx.Machine.Name
+	// Qualified by the logical cluster the Cluster was read from: Machine names
+	// are unique per API server, and under kcp one Prism Central serves many.
+	// Unqualified, two workspaces holding a same-named Machine create two VMs
+	// of one name, and FindVMByName then refuses to resolve either.
+	vmName := scopedName(logicalClusterOf(rctx.Cluster), rctx.Machine.Name)
 	convergedClient := rctx.ConvergedClient
 
 	// Check if the VM already exists
