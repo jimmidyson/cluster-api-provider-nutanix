@@ -20,13 +20,18 @@ import (
 	"fmt"
 
 	capiv1beta2 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+
+	infrav1 "github.com/nutanix-cloud-native/cluster-api-provider-nutanix/api/v1beta1"
 )
 
 // logicalClusterAnnotation is where kcp records the logical cluster an object
 // was read from. It is on the object rather than in configuration, which is
 // why the helpers here take the object and derive the scope from it rather
 // than being told.
-const logicalClusterAnnotation = "kcp.io/cluster"
+//
+// The constant itself lives in api/v1beta1, because pkg/client needs it too
+// and cannot import this package.
+const logicalClusterAnnotation = infrav1.LogicalClusterAnnotation
 
 // logicalClusterOf returns the kcp logical cluster the object was read from,
 // or the empty string when it was not read from kcp.
@@ -45,7 +50,7 @@ func logicalClusterOf(c *capiv1beta2.Cluster) string {
 	if c == nil {
 		return ""
 	}
-	return c.Annotations[logicalClusterAnnotation]
+	return infrav1.LogicalClusterFrom(c.Annotations)
 }
 
 // scopedName qualifies a name with the logical cluster it belongs to.

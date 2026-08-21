@@ -24,9 +24,32 @@ type CacheParams struct {
 	PrismManagementEndpoint *types.ManagementEndpoint
 }
 
-// Key is the namespace/name of te NutanixCluster CR
+// Key identifies the cached Prism client for a NutanixCluster.
+//
+// # Why the namespace and name are not enough
+//
+// The caches this key indexes are process-global and hold session-authenticated
+// clients. A namespace and name are unique within one API server, which is all
+// Cluster API normally has. Under kcp a workspace is a whole API server, two
+// workspaces routinely hold a NutanixCluster of the same namespace and name,
+// and one process serves both.
+//
+// Unqualified, the second workspace to reconcile is handed the first's client:
+// its clusters are then created on the first tenant's Prism Central, with the
+// first tenant's credentials. Nothing fails — the wrong tenant's session simply
+// works — so the qualification is the only thing standing between the two.
+//
+// A NutanixCluster read outside kcp carries no logical cluster and gets exactly
+// the key it always had.
 func (c *CacheParams) Key() string {
-	return c.NutanixCluster.GetNamespacedName()
+	if c.NutanixCluster == nil {
+		return ""
+	}
+	name := c.NutanixCluster.GetNamespacedName()
+	if lc := v1beta1.LogicalClusterFrom(c.NutanixCluster.GetAnnotations()); lc != "" {
+		return lc + "/" + name
+	}
+	return name
 }
 
 // ManagementEndpoint returns the management endpoint of the NutanixCluster CR

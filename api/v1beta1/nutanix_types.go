@@ -57,7 +57,25 @@ const (
 
 	// ObsoleteDefaultCAPICategoryOwnedValue is the obsolete default category value used for CAPI clusters.
 	ObsoleteDefaultCAPICategoryOwnedValue = "owned"
+
+	// LogicalClusterAnnotation is where kcp records the logical cluster an
+	// object was read from.
+	//
+	// It lives here rather than beside its users because two packages need it
+	// and neither can import the other: the controllers derive resource names
+	// from it, and pkg/client keys its Prism client caches on it.
+	LogicalClusterAnnotation = "kcp.io/cluster"
 )
+
+// LogicalClusterFrom returns the kcp logical cluster an object was read from,
+// or the empty string when it was not read from kcp.
+//
+// Empty is the ordinary Cluster API case, and every caller treats it as "do
+// not qualify", so this provider behaves exactly as it always did wherever kcp
+// is not involved.
+func LogicalClusterFrom(annotations map[string]string) string {
+	return annotations[LogicalClusterAnnotation]
+}
 
 // NutanixResourceIdentifier holds the identity of a Nutanix PC resource (cluster, image, subnet, etc.)
 // +union
