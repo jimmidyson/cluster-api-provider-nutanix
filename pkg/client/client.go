@@ -19,6 +19,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -75,8 +76,15 @@ func NewHelper(secretInformer coreinformers.SecretInformer, cmInformer coreinfor
 // cluster named in the context it is given.
 func NewWorkspaceHelper(reader ctlclient.Reader) *NutanixClientHelper {
 	return &NutanixClientHelper{
-		reader:                            reader,
-		managerNutanixPrismEndpointReader: readManagerNutanixPrismEndpointFromDefaultFile,
+		reader: reader,
+		// Deliberately not readManagerNutanixPrismEndpointFromDefaultFile.
+		// BuildManagementEndpoint already refuses to reach the fallback in this
+		// mode; this makes the manager's own credentials unreachable rather
+		// than merely unreached, so that reordering those branches later
+		// cannot quietly hand them to a tenant.
+		managerNutanixPrismEndpointReader: func() (*credentials.NutanixPrismEndpoint, error) {
+			return nil, errors.New("the manager's own Prism Central credentials are not available when serving more than one tenant: name credentials per cluster in spec.prismCentral")
+		},
 	}
 }
 
@@ -102,6 +110,19 @@ func (n *NutanixClientHelper) BuildManagementEndpoint(ctx context.Context, nutan
 	}
 	if providerForNutanixCluster != nil {
 		providers = append(providers, providerForNutanixCluster)
+	} else if n.reader != nil {
+		// No fallback to the manager's own credentials when serving many
+		// tenants. The fallback below reads /etc/nutanix/config/prismCentral,
+		// which is the operator's Prism Central and the operator's account,
+		// mounted into this pod. Handing that to a workload because it omitted
+		// spec.prismCentral is not a collision between tenants — it is any
+		// tenant helping itself to the operator's credentials by leaving a
+		// field out, and it succeeds quietly.
+		//
+		// Credentials are per cluster or they are absent. A NutanixCluster
+		// that names none is an error.
+		return nil, fmt.Errorf("NutanixCluster %s/%s does not set spec.prismCentral: credentials must be named per cluster, and there is no manager-level fallback when serving more than one tenant",
+			nutanixCluster.Namespace, nutanixCluster.Name)
 	} else {
 		log.Info(fmt.Sprintf("[WARNING] prismCentral attribute was not set on NutanixCluster %s in namespace %s. Defaulting to CAPX manager credentials", nutanixCluster.Name, nutanixCluster.Namespace))
 		// Fallback to building a provider using prism central information from the CAPX management cluster

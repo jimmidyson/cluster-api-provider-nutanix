@@ -28,6 +28,7 @@ import (
 	ctlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	infrav1 "github.com/nutanix-cloud-native/cluster-api-provider-nutanix/api/v1beta1"
 	"github.com/nutanix-cloud-native/prism-go-client/environment/credentials"
 )
 
@@ -123,4 +124,74 @@ func TestWorkspaceProviderMissingSecret(t *testing.T) {
 	_, err := NewWorkspaceProvider(t.Context(), reader, endpoint).GetManagementEndpoint(nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reading credentials Secret")
+}
+
+// TestWorkspaceHelperRefusesManagerCredentials is the escalation this refuses.
+//
+// CAPX falls back to /etc/nutanix/config/prismCentral — the operator's Prism
+// Central and the operator's account, mounted into the manager's pod — when a
+// NutanixCluster does not name its own. Serving one tenant that is a
+// convenience. Serving many it is a way for any tenant to obtain the
+// operator's credentials by leaving a field out, and it succeeds quietly,
+// because the operator's credentials are perfectly valid credentials.
+//
+// Credentials are per cluster or the reconcile fails.
+func TestWorkspaceHelperRefusesManagerCredentials(t *testing.T) {
+	empty := fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
+	reader := readerPerWorkspace{byWorkspace: map[string]ctlclient.Client{"": empty}}
+
+	// A NutanixCluster naming no credentials at all: spec.PrismCentral is nil,
+	// which is exactly what sends the single-cluster path to the file.
+	cluster := &infrav1.NutanixCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo", Namespace: "default"},
+	}
+
+	_, err := NewWorkspaceHelper(reader).BuildManagementEndpoint(t.Context(), cluster)
+
+	require.Error(t, err, "a NutanixCluster naming no credentials must fail rather than borrow the manager's")
+
+	// The guard's own wording, which the fallback path cannot produce. Asserting
+	// on anything both layers say — "spec.prismCentral", "more than one tenant" —
+	// passes whichever refused, so it would not notice the guard being removed.
+	assert.Contains(t, err.Error(), "does not set spec.prismCentral",
+		"the refusal must come from the guard, not from whatever the fallback found")
+	assert.NotContains(t, err.Error(), "environment provider from file",
+		"the fallback must not be entered at all")
+}
+
+// TestWorkspaceHelperFileReaderIsUnreachable covers the second layer on its own.
+//
+// BuildManagementEndpoint refuses before reaching the fallback, so this calls
+// the fallback directly: if a later edit reorders those branches, the manager's
+// credentials still must not be obtainable in workspace mode.
+func TestWorkspaceHelperFileReaderIsUnreachable(t *testing.T) {
+	empty := fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
+	reader := readerPerWorkspace{byWorkspace: map[string]ctlclient.Client{"": empty}}
+
+	_, err := NewWorkspaceHelper(reader).buildProviderFromFile(t.Context())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not available when serving more than one tenant")
+}
+
+// TestSingleClusterHelperStillFallsBack pins the behaviour that is not being
+// changed: a CAPX serving one cluster keeps its manager-level fallback, which
+// is why the refusal above is conditional rather than a removal.
+func TestSingleClusterHelperStillFallsBack(t *testing.T) {
+	helper := NewHelper(nil, nil).withCustomNutanixPrismEndpointReader(
+		func() (*credentials.NutanixPrismEndpoint, error) {
+			return nil, assert.AnError
+		},
+	)
+
+	cluster := &infrav1.NutanixCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo", Namespace: "default"},
+	}
+
+	_, err := helper.BuildManagementEndpoint(t.Context(), cluster)
+
+	// It reached the fallback: the error is the reader's, not the refusal.
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "more than one tenant",
+		"the single-cluster path must still reach its manager-level fallback")
 }
