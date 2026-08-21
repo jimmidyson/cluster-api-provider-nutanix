@@ -762,20 +762,37 @@ func GetSubnetUUIDList(ctx context.Context, client *v4Converged.Client, machineS
 }
 
 // GetDefaultCAPICategoryIdentifiers returns the default CAPI category identifiers
-func GetDefaultCAPICategoryIdentifiers(clusterName string) []*infrav1.NutanixCategoryIdentifier {
+//
+// The identifier is qualified by the logical cluster the Cluster was read from.
+// A category is what marks the resources CAPX owns, and it is keyed on the
+// cluster's name alone — which is unique per API server, not per Prism Central.
+// Two workspaces holding a cluster of the same name therefore address one
+// category, and on teardown one tenant's delete reaches the other tenant's
+// marker; nothing in CAPX prevents that, because deleteCategoryKeyValues
+// swallows the delete error Prism returns while VMs are still attached.
+//
+// An empty logical cluster leaves the identifier exactly as it was, so an
+// installation without kcp is unaffected.
+func GetDefaultCAPICategoryIdentifiers(logicalCluster, clusterName string) []*infrav1.NutanixCategoryIdentifier {
 	return []*infrav1.NutanixCategoryIdentifier{
 		{
 			Key:   infrav1.DefaultCAPICategoryKeyForName,
-			Value: clusterName,
+			Value: scopedName(logicalCluster, clusterName),
 		},
 	}
 }
 
 // GetObsoleteDefaultCAPICategoryIdentifiers returns the default CAPI category identifiers
-func GetObsoleteDefaultCAPICategoryIdentifiers(clusterName string) []*infrav1.NutanixCategoryIdentifier {
+//
+// Qualified as above. The obsolete form exists to clean up brownfield installs,
+// which by definition predate kcp: without a logical cluster this looks for
+// exactly the key it always did, and under kcp it looks for a qualified key
+// that no brownfield install ever wrote, which is the correct no-op rather
+// than a delete aimed at a key another workspace may share.
+func GetObsoleteDefaultCAPICategoryIdentifiers(logicalCluster, clusterName string) []*infrav1.NutanixCategoryIdentifier {
 	return []*infrav1.NutanixCategoryIdentifier{
 		{
-			Key:   fmt.Sprintf("%s%s", infrav1.ObsoleteDefaultCAPICategoryPrefix, clusterName),
+			Key:   fmt.Sprintf("%s%s", infrav1.ObsoleteDefaultCAPICategoryPrefix, scopedName(logicalCluster, clusterName)),
 			Value: infrav1.ObsoleteDefaultCAPICategoryOwnedValue,
 		},
 	}

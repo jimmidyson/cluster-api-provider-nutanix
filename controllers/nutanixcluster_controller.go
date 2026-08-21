@@ -659,7 +659,7 @@ func (r *NutanixClusterReconciler) validateFailureDomainSpec(rctx *nctx.ClusterC
 func (r *NutanixClusterReconciler) reconcileCategories(rctx *nctx.ClusterContext) error {
 	log := ctrl.LoggerFrom(rctx.Context)
 	log.Info("Reconciling categories for cluster")
-	defaultCategories := GetDefaultCAPICategoryIdentifiers(rctx.Cluster.Name)
+	defaultCategories := GetDefaultCAPICategoryIdentifiers(logicalClusterOf(rctx.Cluster), rctx.Cluster.Name)
 	_, err := GetOrCreateCategories(rctx.Context, rctx.ConvergedClient, defaultCategories)
 	if err != nil {
 		v1beta1conditions.MarkFalse(rctx.NutanixCluster, infrav1.ClusterCategoryCreatedCondition, infrav1.ClusterCategoryCreationFailed, capiv1beta1.ConditionSeverityError, "%s", err.Error())
@@ -685,8 +685,8 @@ func (r *NutanixClusterReconciler) reconcileCategoriesDelete(rctx *nctx.ClusterC
 	log.Info(fmt.Sprintf("Reconciling deletion of categories for cluster %s", rctx.Cluster.Name))
 	if v1beta1conditions.IsTrue(rctx.NutanixCluster, infrav1.ClusterCategoryCreatedCondition) ||
 		v1beta1conditions.GetReason(rctx.NutanixCluster, infrav1.ClusterCategoryCreatedCondition) == infrav1.DeletionFailed {
-		defaultCategories := GetDefaultCAPICategoryIdentifiers(rctx.Cluster.Name)
-		obsoleteCategories := GetObsoleteDefaultCAPICategoryIdentifiers(rctx.Cluster.Name)
+		defaultCategories := GetDefaultCAPICategoryIdentifiers(logicalClusterOf(rctx.Cluster), rctx.Cluster.Name)
+		obsoleteCategories := GetObsoleteDefaultCAPICategoryIdentifiers(logicalClusterOf(rctx.Cluster), rctx.Cluster.Name)
 		err := DeleteCategories(rctx.Context, rctx.ConvergedClient, defaultCategories, obsoleteCategories)
 		if err != nil {
 			v1beta1conditions.MarkFalse(rctx.NutanixCluster, infrav1.ClusterCategoryCreatedCondition, infrav1.DeletionFailed, capiv1beta1.ConditionSeverityWarning, "%s", err.Error())

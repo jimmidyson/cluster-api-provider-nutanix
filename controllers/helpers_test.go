@@ -1888,7 +1888,7 @@ func TestGetImageByLookup(t *testing.T) {
 
 func TestGetDefaultCAPICategoryIdentifiers(t *testing.T) {
 	clusterName := "my-cluster"
-	ids := GetDefaultCAPICategoryIdentifiers(clusterName)
+	ids := GetDefaultCAPICategoryIdentifiers("", clusterName)
 	require.Len(t, ids, 1)
 	require.NotNil(t, ids[0])
 	assert.Equal(t, infrav1.DefaultCAPICategoryKeyForName, ids[0].Key)
@@ -1897,11 +1897,39 @@ func TestGetDefaultCAPICategoryIdentifiers(t *testing.T) {
 
 func TestGetObsoleteDefaultCAPICategoryIdentifiers(t *testing.T) {
 	clusterName := "my-cluster"
-	ids := GetObsoleteDefaultCAPICategoryIdentifiers(clusterName)
+	ids := GetObsoleteDefaultCAPICategoryIdentifiers("", clusterName)
 	require.Len(t, ids, 1)
 	require.NotNil(t, ids[0])
 	assert.Equal(t, infrav1.ObsoleteDefaultCAPICategoryPrefix+clusterName, ids[0].Key)
 	assert.Equal(t, infrav1.ObsoleteDefaultCAPICategoryOwnedValue, ids[0].Value)
+}
+
+// TestCategoryIdentifiersSeparateWorkspaces is the collision these identifiers
+// exist to stop: the category is what marks the resources CAPX owns, and two
+// workspaces holding a cluster of the same name must not address one of them.
+//
+// The teardown case is why it matters. DeleteCategories deletes the category
+// by key and value, and the only thing standing between one tenant's teardown
+// and another tenant's marker is Prism refusing to delete a category that
+// still has VMs attached — an error deleteCategoryKeyValues discards.
+func TestCategoryIdentifiersSeparateWorkspaces(t *testing.T) {
+	const clusterName = "demo"
+
+	alpha := GetDefaultCAPICategoryIdentifiers("workspace-alpha", clusterName)
+	beta := GetDefaultCAPICategoryIdentifiers("workspace-beta", clusterName)
+	require.Len(t, alpha, 1)
+	require.Len(t, beta, 1)
+
+	assert.Equal(t, alpha[0].Key, beta[0].Key, "the category key is a constant and stays one")
+	assert.NotEqual(t, alpha[0].Value, beta[0].Value,
+		"two workspaces holding a same-named cluster must not address one category")
+
+	obsoleteAlpha := GetObsoleteDefaultCAPICategoryIdentifiers("workspace-alpha", clusterName)
+	obsoleteBeta := GetObsoleteDefaultCAPICategoryIdentifiers("workspace-beta", clusterName)
+	require.Len(t, obsoleteAlpha, 1)
+	require.Len(t, obsoleteBeta, 1)
+	assert.NotEqual(t, obsoleteAlpha[0].Key, obsoleteBeta[0].Key,
+		"the obsolete form is deleted by key, so it has to separate too")
 }
 
 func TestGetOrCreateCategories_Existing(t *testing.T) {
