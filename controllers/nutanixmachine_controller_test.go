@@ -189,13 +189,33 @@ func TestNutanixMachineReconciler(t *testing.T) {
 				g.Expect(err.Error()).To(ContainSubstring("failed to fetch the referent failure domain object"))
 			})
 
+			It("status.failureDomain should be set when spec cluster and subnets are empty and inherit from the failure domain", func() {
+				g.Expect(k8sClient.Create(ctx, fdObj)).To(Succeed())
+
+				machine.Spec.FailureDomain = fdObj.Name
+				mctx := &nctx.MachineContext{
+					Context:        ctx,
+					NutanixMachine: ntnxMachine,
+					Machine:        machine,
+					NutanixCluster: ntnxCluster,
+				}
+				err := reconciler.checkFailureDomainStatus(mctx)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ntnxMachine.Status.FailureDomain).ToNot(BeNil())
+				g.Expect(*ntnxMachine.Status.FailureDomain).To(Equal(fdObj.Name))
+			})
+
 			It("should error if failureDomain is configured in the owner machine spec and cluster configuration is not consistent", func() {
 				// Create the NutanixFailureDomain object and expect creation success
 				g.Expect(k8sClient.Create(ctx, fdObj)).To(Succeed())
 
+				otherCluster := "other-pe"
 				machine.Spec.FailureDomain = fdObj.Name
-				ntnxMachine.Spec.Cluster = fdObj.Spec.PrismElementCluster
-				ntnxMachine.Spec.Cluster.Name = nil
+				ntnxMachine.Spec.Cluster = infrav1.NutanixResourceIdentifier{
+					Type: infrav1.NutanixIdentifierName,
+					Name: &otherCluster,
+				}
+				ntnxMachine.Spec.Subnets = fdObj.Spec.Subnets
 				mctx := &nctx.MachineContext{
 					Context:        ctx,
 					NutanixMachine: ntnxMachine,
@@ -211,9 +231,12 @@ func TestNutanixMachineReconciler(t *testing.T) {
 				// Create the NutanixFailureDomain object and expect creation success
 				g.Expect(k8sClient.Create(ctx, fdObj)).To(Succeed())
 
+				otherSubnet := "other-subnet"
 				machine.Spec.FailureDomain = fdObj.Name
 				ntnxMachine.Spec.Cluster = fdObj.Spec.PrismElementCluster
-				// ntnxMachine.Spec.Subnets is empty
+				ntnxMachine.Spec.Subnets = []infrav1.NutanixResourceIdentifier{
+					{Type: infrav1.NutanixIdentifierName, Name: &otherSubnet},
+				}
 				mctx := &nctx.MachineContext{
 					Context:        ctx,
 					NutanixMachine: ntnxMachine,
@@ -3329,11 +3352,13 @@ func TestNutanixMachineReconciler_getOrCreateVM(t *testing.T) {
 		// 2. GetTaskUUIDFromVM after VM creation returns task with UUID
 		mockConvergedClient.MockTasks.EXPECT().List(ctx, gomock.Any()).Return([]prismModels.Task{}, nil)
 
-		// Mock CreateVM
+		// Mock CreateVM (async + wait)
 		createdVM := vmmModels.NewVm()
 		createdVM.Name = ptr.To(vmName)
 		createdVM.ExtId = ptr.To(vmUUID)
-		mockConvergedClient.MockVMs.EXPECT().Create(ctx, gomock.Any()).Return(createdVM, nil)
+		mockCreateOp := mockconverged.NewMockOperation[vmmModels.Vm](ctrl)
+		mockCreateOp.EXPECT().Wait(ctx).Return([]*vmmModels.Vm{createdVM}, nil)
+		mockConvergedClient.MockVMs.EXPECT().CreateAsync(ctx, gomock.Any()).Return(mockCreateOp, nil)
 
 		// Create machine context
 		rctx := &nctx.MachineContext{
@@ -3602,6 +3627,82 @@ func TestNutanixMachineReconciler_getOrCreateVM(t *testing.T) {
 		assert.Nil(t, ntnxMachine.Status.FailureReason)
 		assert.Nil(t, ntnxMachine.Status.FailureMessage)
 	})
+}
+
+func Test_createAndWaitForVM(t *testing.T) {
+	ctx := context.Background()
+	vmName := "test-vm"
+	createdVM := vmmModels.NewVm()
+	createdVM.Name = ptr.To(vmName)
+	createdVM.ExtId = ptr.To("vm-uuid")
+
+	tests := []struct {
+		name           string
+		waitResult     []*vmmModels.Vm
+		wantErrSubstr  string
+		wantFailure    bool
+		wantReturnedVM bool
+	}{
+		{
+			name:           "returns the VM when wait yields exactly one",
+			waitResult:     []*vmmModels.Vm{createdVM},
+			wantReturnedVM: true,
+		},
+		{
+			name:          "fails when wait yields no VMs",
+			waitResult:    []*vmmModels.Vm{},
+			wantErrSubstr: "expected exactly 1 VM, got 0",
+			wantFailure:   true,
+		},
+		{
+			name:          "fails when wait yields a nil VM",
+			waitResult:    []*vmmModels.Vm{nil},
+			wantErrSubstr: "expected exactly 1 VM, got 1",
+			wantFailure:   true,
+		},
+		{
+			name:          "fails when wait yields more than one VM",
+			waitResult:    []*vmmModels.Vm{createdVM, createdVM},
+			wantErrSubstr: "expected exactly 1 VM, got 2",
+			wantFailure:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockConvergedClient := NewMockConvergedClient(ctrl)
+			mockCreateOp := mockconverged.NewMockOperation[vmmModels.Vm](ctrl)
+			mockCreateOp.EXPECT().Wait(ctx).Return(tt.waitResult, nil)
+			mockConvergedClient.MockVMs.EXPECT().CreateAsync(ctx, gomock.Any()).Return(mockCreateOp, nil)
+
+			ntnxMachine := &infrav1.NutanixMachine{}
+			rctx := &nctx.MachineContext{
+				Context:         ctx,
+				NutanixMachine:  ntnxMachine,
+				ConvergedClient: mockConvergedClient.Client,
+			}
+
+			vm, err := createAndWaitForVM(ctx, rctx, vmmModels.NewVm(), vmName)
+			if tt.wantReturnedVM {
+				require.NoError(t, err)
+				require.NotNil(t, vm)
+				assert.Equal(t, createdVM, vm)
+				assert.Nil(t, ntnxMachine.Status.FailureReason)
+				return
+			}
+
+			require.Error(t, err)
+			assert.Nil(t, vm)
+			assert.ErrorContains(t, err, tt.wantErrSubstr)
+			if tt.wantFailure {
+				require.NotNil(t, ntnxMachine.Status.FailureReason)
+				assert.Equal(t, createErrorFailureReason, *ntnxMachine.Status.FailureReason)
+			}
+		})
+	}
 }
 
 func TestNutanixMachineReconciler_addCustomAttributes(t *testing.T) {
@@ -5314,4 +5415,195 @@ func TestSetFailureDomainCustomAttributes(t *testing.T) {
 			require.Equal(t, tt.wantAttrs, tt.vm.CustomAttributes)
 		})
 	}
+}
+
+func TestCheckFailureDomainStatus_MetroComparesSubnetNetworks(t *testing.T) {
+	g := NewWithT(t)
+
+	const (
+		ns          = "default"
+		metroName   = "metro-recovery"
+		metroSite   = "metrosite-recovery"
+		fd0Name     = "fd-site-01"
+		fd1Name     = "fd-site-02"
+		pe0UUID     = "00000000-0000-0000-0000-000000000010"
+		pe1UUID     = "00000000-0000-0000-0000-000000000011"
+		subnet0UUID = "00000000-0000-0000-0000-0000000000a1"
+		subnet1UUID = "00000000-0000-0000-0000-0000000000a2"
+	)
+
+	scheme := runtime.NewScheme()
+	g.Expect(infrav1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(capiv1beta2.AddToScheme(scheme)).To(Succeed())
+
+	fd0 := &infrav1.NutanixFailureDomain{
+		ObjectMeta: metav1.ObjectMeta{Name: fd0Name, Namespace: ns},
+		Spec: infrav1.NutanixFailureDomainSpec{
+			PrismElementCluster: infrav1.NutanixResourceIdentifier{
+				Type: infrav1.NutanixIdentifierUUID,
+				UUID: ptr.To(pe0UUID),
+			},
+			Subnets: []infrav1.NutanixResourceIdentifier{
+				{Type: infrav1.NutanixIdentifierUUID, UUID: ptr.To(subnet0UUID)},
+			},
+		},
+	}
+	fd1 := &infrav1.NutanixFailureDomain{
+		ObjectMeta: metav1.ObjectMeta{Name: fd1Name, Namespace: ns},
+		Spec: infrav1.NutanixFailureDomainSpec{
+			PrismElementCluster: infrav1.NutanixResourceIdentifier{
+				Type: infrav1.NutanixIdentifierUUID,
+				UUID: ptr.To(pe1UUID),
+			},
+			Subnets: []infrav1.NutanixResourceIdentifier{
+				{Type: infrav1.NutanixIdentifierUUID, UUID: ptr.To(subnet1UUID)},
+			},
+		},
+	}
+	metro := &infrav1.NutanixMetro{
+		ObjectMeta: metav1.ObjectMeta{Name: metroName, Namespace: ns},
+		Spec: infrav1.NutanixMetroSpec{
+			FailureDomains: []corev1.LocalObjectReference{{Name: fd0Name}, {Name: fd1Name}},
+		},
+	}
+	metrositeObj := &infrav1.NutanixMetroSite{
+		ObjectMeta: metav1.ObjectMeta{Name: metroSite, Namespace: ns},
+		Spec: infrav1.NutanixMetroSiteSpec{
+			MetroRef:               corev1.LocalObjectReference{Name: metroName},
+			PreferredFailureDomain: corev1.LocalObjectReference{Name: fd0Name},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(fd0, fd1, metro, metrositeObj).Build()
+	reconciler := &NutanixMachineReconciler{Client: fakeClient}
+	machineFD := metroSiteFailureDomainPrefix + metroSite
+	vlan := subnetModels.SUBNETTYPE_VLAN
+
+	newRecoveryMachine := func() *infrav1.NutanixMachine {
+		return &infrav1.NutanixMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "nm-recovery",
+				Namespace: ns,
+				Labels: map[string]string{
+					metroNativeFailureDomainLabelKey: fd0Name,
+				},
+				Annotations: map[string]string{
+					metroActivePlacementPEAnnotation: fd1.Spec.PrismElementCluster.String(),
+				},
+			},
+			Spec: infrav1.NutanixMachineSpec{
+				Cluster: fd1.Spec.PrismElementCluster,
+				Subnets: fd1.Spec.Subnets,
+			},
+		}
+	}
+
+	t.Run("accepts paired-site subnet when VLAN ID and CIDR match the native failure domain", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockClient := NewMockConvergedClient(ctrl)
+		mockClient.MockClusters.EXPECT().Get(gomock.Any(), pe0UUID).Return(
+			&clustermgmtconfig.Cluster{ExtId: ptr.To(pe0UUID)}, nil)
+		mockClient.MockClusters.EXPECT().Get(gomock.Any(), pe1UUID).Return(
+			&clustermgmtconfig.Cluster{ExtId: ptr.To(pe1UUID)}, nil)
+		mockClient.MockSubnets.EXPECT().Get(gomock.Any(), subnet0UUID).Return(&subnetModels.Subnet{
+			ExtId: ptr.To(subnet0UUID), Name: ptr.To("Vlan-041-site-01"), SubnetType: &vlan, NetworkId: ptr.To(41), IpPrefix: ptr.To("10.0.0.0/24"),
+		}, nil)
+		mockClient.MockSubnets.EXPECT().Get(gomock.Any(), subnet1UUID).Return(&subnetModels.Subnet{
+			ExtId: ptr.To(subnet1UUID), Name: ptr.To("Vlan-041-site-02"), SubnetType: &vlan, NetworkId: ptr.To(41), IpPrefix: ptr.To("10.0.0.0/24"),
+		}, nil)
+
+		ntnxMachine := newRecoveryMachine()
+		mctx := &nctx.MachineContext{
+			Context:         context.Background(),
+			NutanixMachine:  ntnxMachine,
+			ConvergedClient: mockClient.Client,
+			Machine: &capiv1beta2.Machine{
+				ObjectMeta: metav1.ObjectMeta{Name: "machine-recovery", Namespace: ns},
+				Spec:       capiv1beta2.MachineSpec{FailureDomain: machineFD},
+			},
+		}
+
+		err := reconciler.checkFailureDomainStatus(mctx)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(ntnxMachine.Status.FailureDomain).NotTo(BeNil())
+		g.Expect(*ntnxMachine.Status.FailureDomain).To(Equal(machineFD))
+	})
+
+	t.Run("rejects paired-site subnet when VLAN ID differs from the native failure domain", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockClient := NewMockConvergedClient(ctrl)
+		mockClient.MockClusters.EXPECT().Get(gomock.Any(), pe0UUID).Return(
+			&clustermgmtconfig.Cluster{ExtId: ptr.To(pe0UUID)}, nil)
+		mockClient.MockClusters.EXPECT().Get(gomock.Any(), pe1UUID).Return(
+			&clustermgmtconfig.Cluster{ExtId: ptr.To(pe1UUID)}, nil)
+		mockClient.MockSubnets.EXPECT().Get(gomock.Any(), subnet0UUID).Return(&subnetModels.Subnet{
+			ExtId: ptr.To(subnet0UUID), Name: ptr.To("Vlan-041-site-01"), SubnetType: &vlan, NetworkId: ptr.To(41), IpPrefix: ptr.To("10.0.0.0/24"),
+		}, nil)
+		mockClient.MockSubnets.EXPECT().Get(gomock.Any(), subnet1UUID).Return(&subnetModels.Subnet{
+			ExtId: ptr.To(subnet1UUID), Name: ptr.To("Vlan-100-site-02"), SubnetType: &vlan, NetworkId: ptr.To(100), IpPrefix: ptr.To("10.0.1.0/24"),
+		}, nil)
+
+		ntnxMachine := newRecoveryMachine()
+		mctx := &nctx.MachineContext{
+			Context:         context.Background(),
+			NutanixMachine:  ntnxMachine,
+			ConvergedClient: mockClient.Client,
+			Machine: &capiv1beta2.Machine{
+				ObjectMeta: metav1.ObjectMeta{Name: "machine-recovery-mismatch", Namespace: ns},
+				Spec:       capiv1beta2.MachineSpec{FailureDomain: machineFD},
+			},
+		}
+
+		err := reconciler.checkFailureDomainStatus(mctx)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("not consistent with the referenced NutanixFailureDomain"))
+		g.Expect(err.Error()).To(ContainSubstring("VLAN|100|10.0.1.0/24"))
+		g.Expect(err.Error()).To(ContainSubstring("VLAN|41|10.0.0.0/24"))
+	})
+}
+
+func Test_checkFailureDomainStatus_inheritsEmptyMachineSpec(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, infrav1.AddToScheme(scheme))
+
+	peName := "vj-dh1-rutgear"
+	subnetName := "nkp-dataplane-vlan"
+	fd := &infrav1.NutanixFailureDomain{
+		ObjectMeta: metav1.ObjectMeta{Name: "fd0", Namespace: "default"},
+		Spec: infrav1.NutanixFailureDomainSpec{
+			PrismElementCluster: infrav1.NutanixResourceIdentifier{
+				Type: infrav1.NutanixIdentifierName,
+				Name: &peName,
+			},
+			Subnets: []infrav1.NutanixResourceIdentifier{
+				{Type: infrav1.NutanixIdentifierName, Name: &subnetName},
+			},
+		},
+	}
+
+	ntnxMachine := &infrav1.NutanixMachine{
+		ObjectMeta: metav1.ObjectMeta{Name: "cp-0", Namespace: "default"},
+	}
+	machine := &capiv1beta2.Machine{
+		ObjectMeta: metav1.ObjectMeta{Name: "cp-0", Namespace: "default"},
+		Spec:       capiv1beta2.MachineSpec{FailureDomain: "fd0"},
+	}
+
+	reconciler := &NutanixMachineReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(fd).Build(),
+	}
+	mctx := &nctx.MachineContext{
+		Context:        context.Background(),
+		NutanixMachine: ntnxMachine,
+		Machine:        machine,
+	}
+
+	require.NoError(t, reconciler.checkFailureDomainStatus(mctx))
+	require.NotNil(t, ntnxMachine.Status.FailureDomain)
+	require.Equal(t, "fd0", *ntnxMachine.Status.FailureDomain)
 }

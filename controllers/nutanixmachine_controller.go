@@ -779,9 +779,13 @@ func (r *NutanixMachineReconciler) checkFailureDomainStatus(rctx *nctx.MachineCo
 	//
 	// metro.nutanix.com/active-placement-pe stores the PE cluster identifier (name or uuid string) where the VM
 	// is actually placed when it differs from the native failure domain due to recovery/maintenance.
+	//
+	// Empty spec.cluster / spec.subnets inherit from the failure domain. That is the normal
+	// metro/topology state (templates omit PE and subnet; topology can wipe CAPX copies).
+	// Treat a field as a conflict only when it is set and disagrees.
 	var clusterValidationErr string
-	if rctx.NutanixMachine.Annotations != nil && rctx.NutanixMachine.Annotations[metroActivePlacementPEAnnotation] != "" {
-		// Recovery placement scenario: validate against the active placement PE (string comparison)
+	machineClusterSpecified := nutanixResourceIdentifierSpecified(rctx.NutanixMachine.Spec.Cluster)
+	if machineClusterSpecified && rctx.NutanixMachine.Annotations != nil && rctx.NutanixMachine.Annotations[metroActivePlacementPEAnnotation] != "" {
 		actualPE := rctx.NutanixMachine.Spec.Cluster.String()
 		expectedPE := rctx.NutanixMachine.Annotations[metroActivePlacementPEAnnotation]
 		if actualPE != expectedPE {
@@ -792,32 +796,28 @@ func (r *NutanixMachineReconciler) checkFailureDomainStatus(rctx *nctx.MachineCo
 				expectedPE,
 			)
 		}
-	} else {
-		// Normal scenario: validate against the native failure domain's PE
-		if !rctx.NutanixMachine.Spec.Cluster.EqualTo(&fdSpec.PrismElementCluster) {
-			clusterValidationErr = fmt.Sprintf(
-				"NutanixMachine.spec.cluster=%s, NutanixFailureDomain.spec.prismElementCluster=%s",
-				rctx.NutanixMachine.Spec.Cluster.DisplayString(),
-				fdSpec.PrismElementCluster.DisplayString(),
-			)
-		}
+	} else if machineClusterSpecified && !rctx.NutanixMachine.Spec.Cluster.EqualTo(&fdSpec.PrismElementCluster) {
+		clusterValidationErr = fmt.Sprintf(
+			"NutanixMachine.spec.cluster=%s, NutanixFailureDomain.spec.prismElementCluster=%s",
+			rctx.NutanixMachine.Spec.Cluster.DisplayString(),
+			fdSpec.PrismElementCluster.DisplayString(),
+		)
 	}
 
-	// Validate the NutanixMachine machine spec is consistent with the expected configuration
-	// Note: Subnet validation still uses fdSpec.Subnets since subnets are symmetric across Metro sites
+	// Validate the NutanixMachine machine spec is consistent with the expected configuration.
+	// Metro sites use distinct Prism subnet objects per PE (different names/UUIDs) that share the
+	// same L2/L3 network (layer, VLAN ID/VNI, CIDR). Identifier equality is therefore not a valid
+	// metro check; when names differ, compare the resolved network keys instead.
 	errMessages := []string{}
 	if clusterValidationErr != "" {
 		errMessages = append(errMessages, clusterValidationErr)
 	}
-	if !resourceIdsEquals(rctx.NutanixMachine.Spec.Subnets, fdSpec.Subnets) {
-		errMessages = append(
-			errMessages,
-			fmt.Sprintf(
-				"NutanixMachine.spec.subnets=%v, NutanixFailureDomain.spec.subnets=%v",
-				rctx.NutanixMachine.Spec.Subnets,
-				fdSpec.Subnets,
-			),
-		)
+	subnetMsg, err := r.checkFailureDomainSubnets(rctx, fd, fdSpec)
+	if err != nil {
+		return err
+	}
+	if subnetMsg != "" {
+		errMessages = append(errMessages, subnetMsg)
 	}
 	if len(errMessages) > 0 {
 		return fmt.Errorf(
@@ -831,6 +831,49 @@ func (r *NutanixMachineReconciler) checkFailureDomainStatus(rctx *nctx.MachineCo
 	rctx.NutanixMachine.Status.FailureDomain = &fd
 
 	return nil
+}
+
+func (r *NutanixMachineReconciler) checkFailureDomainSubnets(
+	rctx *nctx.MachineContext,
+	fdName string,
+	fdSpec *infrav1.NutanixFailureDomainSpec,
+) (string, error) {
+	// Empty spec.subnets inherit from the failure domain (topology/metro templates omit them).
+	if len(rctx.NutanixMachine.Spec.Subnets) == 0 {
+		return "", nil
+	}
+	if resourceIdsEquals(rctx.NutanixMachine.Spec.Subnets, fdSpec.Subnets) {
+		return "", nil
+	}
+
+	metroFD := isNutanixMetroFailureDomain(fdName) || isNutanixMetroSiteFailureDomain(fdName)
+	if !metroFD {
+		return fmt.Sprintf(
+			"NutanixMachine.spec.subnets=%v, NutanixFailureDomain.spec.subnets=%v",
+			rctx.NutanixMachine.Spec.Subnets,
+			fdSpec.Subnets,
+		), nil
+	}
+
+	match, machineKeys, fdKeys, err := metroSubnetsMatch(
+		rctx.Context,
+		rctx.ConvergedClient,
+		rctx.NutanixMachine.Spec.Subnets,
+		fdSpec.Subnets,
+		rctx.NutanixMachine.Spec.Cluster,
+		fdSpec.PrismElementCluster,
+	)
+	if err != nil {
+		return "", err
+	}
+	if match {
+		return "", nil
+	}
+	return fmt.Sprintf(
+		"NutanixMachine.spec.subnets network=%v, NutanixFailureDomain.spec.subnets network=%v",
+		machineKeys,
+		fdKeys,
+	), nil
 }
 
 // checkVHADomainCategory enforces the implicit contract that a Metro VM carries one and only one
@@ -1709,7 +1752,7 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*vm
 	convergedClient := rctx.ConvergedClient
 
 	// Check if the VM already exists
-	vmFound, err := FindVM(ctx, convergedClient, rctx.Machine, rctx.NutanixMachine, vmName)
+	vmFound, err := FindVM(ctx, convergedClient, rctx.Machine, rctx.NutanixMachine, vmName, nutanixV3Service(rctx))
 	if err != nil {
 		log.Error(err, fmt.Sprintf("error occurred finding VM %s by name or uuid", vmName))
 		return nil, err
@@ -1718,13 +1761,7 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*vm
 	// if VM exists
 	if vmFound != nil {
 		log.Info(fmt.Sprintf("vm %s found with UUID %s", *vmFound.Name, rctx.NutanixMachine.Status.VmUUID))
-
-		v1beta1conditions.MarkTrue(rctx.NutanixMachine, infrav1.VMProvisionedCondition)
-		v1beta2conditions.Set(rctx.NutanixMachine, metav1.Condition{
-			Type:   string(infrav1.VMProvisionedCondition),
-			Status: metav1.ConditionTrue,
-			Reason: capiv1beta1.ProvisionedV1Beta2Reason,
-		})
+		markVMProvisioned(rctx)
 		return vmFound, nil
 	}
 
@@ -1836,13 +1873,9 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*vm
 
 	// Create the actual VM/Machine
 	log.Info(fmt.Sprintf("Creating VM with name %s for cluster %s", vmName, rctx.NutanixCluster.Name))
-	vm, err = convergedClient.VMs.Create(ctx, vm)
+	vm, err = createAndWaitForVM(ctx, rctx, vm, vmName)
 	if err != nil {
-		errorMsg := fmt.Errorf("failed to create VM %s: %w", vmName, err)
-		if !isRetryableAPIError(err) {
-			rctx.SetFailureStatus(createErrorFailureReason, errorMsg)
-		}
-		return nil, errorMsg
+		return nil, err
 	}
 
 	vmUuid := *vm.ExtId
@@ -1862,13 +1895,43 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext) (*vm
 		return nil, err
 	}
 
+	markVMProvisioned(rctx)
+	return vm, nil
+}
+
+func markVMProvisioned(rctx *nctx.MachineContext) {
 	v1beta1conditions.MarkTrue(rctx.NutanixMachine, infrav1.VMProvisionedCondition)
 	v1beta2conditions.Set(rctx.NutanixMachine, metav1.Condition{
 		Type:   string(infrav1.VMProvisionedCondition),
 		Status: metav1.ConditionTrue,
 		Reason: capiv1beta1.ProvisionedV1Beta2Reason,
 	})
-	return vm, nil
+}
+
+func createAndWaitForVM(ctx context.Context, rctx *nctx.MachineContext, vm *vmmconfig.Vm, vmName string) (*vmmconfig.Vm, error) {
+	convergedClient := rctx.ConvergedClient
+	createOp, err := convergedClient.VMs.CreateAsync(ctx, vm)
+	if err != nil {
+		return nil, vmCreateFailure(rctx, vmName, err)
+	}
+	createdVMs, err := waitForConvergedOperation(ctx, convergedClient, createOp)
+	if err != nil {
+		return nil, vmCreateFailure(rctx, vmName, err)
+	}
+	if len(createdVMs) != 1 || createdVMs[0] == nil {
+		errorMsg := fmt.Errorf("failed to create VM %s: operation completed but expected exactly 1 VM, got %d", vmName, len(createdVMs))
+		rctx.SetFailureStatus(createErrorFailureReason, errorMsg)
+		return nil, errorMsg
+	}
+	return createdVMs[0], nil
+}
+
+func vmCreateFailure(rctx *nctx.MachineContext, vmName string, err error) error {
+	errorMsg := fmt.Errorf("failed to create VM %s: %w", vmName, err)
+	if !isRetryableAPIError(err) {
+		rctx.SetFailureStatus(createErrorFailureReason, errorMsg)
+	}
+	return errorMsg
 }
 
 // addCustomAttributes sets custom attributes on the VM, including the provider ID.
