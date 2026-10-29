@@ -53,6 +53,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -92,8 +93,12 @@ type NutanixMachineReconciler struct {
 	APIReader         client.Reader
 	SecretInformer    coreinformers.SecretInformer
 	ConfigMapInformer coreinformers.ConfigMapInformer
-	Scheme            *runtime.Scheme
-	controllerConfig  *ControllerConfig
+	// CredentialReader, when set, reads Prism Central credentials through a
+	// cluster-aware client instead of the informers above. A fleet-wide setup
+	// must set it; see credentialSource.
+	CredentialReader ctlclient.Reader
+	Scheme           *runtime.Scheme
+	controllerConfig *ControllerConfig
 }
 
 func NewNutanixMachineReconciler(client client.Client, secretInformer coreinformers.SecretInformer, configMapInformer coreinformers.ConfigMapInformer, scheme *runtime.Scheme, copts ...ControllerConfigOpts) (*NutanixMachineReconciler, error) {
@@ -276,13 +281,13 @@ func (r *NutanixMachineReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	log.Info(fmt.Sprintf("Reconciling NutanixMachine %s in namespace %s", ntxMachine.Name, ntxMachine.Namespace))
 	// Create a Nutanix client for the NutanixCluster.
-	v3Client, err := getPrismCentralClientForCluster(ctx, ntxCluster, r.SecretInformer, r.ConfigMapInformer)
+	v3Client, err := getPrismCentralClientForCluster(ctx, ntxCluster, r.credentials())
 	if err != nil {
 		log.Error(err, "error occurred while fetching prism central client")
 		return reconcile.Result{}, err
 	}
 
-	convergedClient, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntxCluster, r.SecretInformer, r.ConfigMapInformer)
+	convergedClient, err := getPrismCentralConvergedV4ClientForCluster(ctx, ntxCluster, r.credentials())
 	if err != nil {
 		log.Error(err, "error occurred while fetching prism central converged client")
 		return reconcile.Result{}, err
@@ -326,7 +331,7 @@ func (r *NutanixMachineReconciler) reconcileDelete(rctx *nctx.MachineContext) (r
 	ctx := rctx.Context
 	log := ctrl.LoggerFrom(ctx)
 	convergedClient := rctx.ConvergedClient
-	vmName := rctx.Machine.Name
+	vmName := scopedName(logicalClusterOf(rctx.Cluster), rctx.Machine.Name)
 	log.Info(fmt.Sprintf("Handling deletion of VM: %s", vmName))
 	v1beta1conditions.MarkFalse(rctx.NutanixMachine, infrav1.VMProvisionedCondition, capiv1beta1.DeletingReason, capiv1beta1.ConditionSeverityInfo, "")
 	v1beta2conditions.Set(rctx.NutanixMachine, metav1.Condition{
@@ -1915,7 +1920,11 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext, effe
 	var err error
 	ctx := rctx.Context
 	log := ctrl.LoggerFrom(ctx)
-	vmName := rctx.Machine.Name
+	// Qualified by the logical cluster the Cluster was read from: Machine names
+	// are unique per API server, and under kcp one Prism Central serves many.
+	// Unqualified, two workspaces holding a same-named Machine create two VMs
+	// of one name, and FindVMByName then refuses to resolve either.
+	vmName := scopedName(logicalClusterOf(rctx.Cluster), rctx.Machine.Name)
 	convergedClient := rctx.ConvergedClient
 
 	var effectiveProjectExtID *string
@@ -1999,7 +2008,7 @@ func (r *NutanixMachineReconciler) getOrCreateVM(rctx *nctx.MachineContext, effe
 		categoryProjectExtID = effectiveProjectExtID
 	}
 
-	defaultCategoryIdentifiers := GetDefaultCAPICategoryIdentifiers(rctx.Cluster.Name)
+	defaultCategoryIdentifiers := GetDefaultCAPICategoryIdentifiers(logicalClusterOf(rctx.Cluster), rctx.Cluster.Name)
 	if _, err := GetOrCreateCategoriesForProject(ctx, rctx.ConvergedClient, defaultCategoryIdentifiers, categoryProjectExtID); err != nil {
 		errorMsg := fmt.Errorf("error occurred while creating category spec for vm %s: %w", vmName, err)
 		if !isRetryableAPIError(err) {
@@ -2307,7 +2316,7 @@ func (r *NutanixMachineReconciler) buildDeployParamsFromProfile(
 			Reason: infrav1.Succeeded,
 		})
 	}
-	defaultCategoryIdentifiers := GetDefaultCAPICategoryIdentifiers(rctx.Cluster.Name)
+	defaultCategoryIdentifiers := GetDefaultCAPICategoryIdentifiers(logicalClusterOf(rctx.Cluster), rctx.Cluster.Name)
 	if _, err := GetOrCreateCategoriesForProject(ctx, convergedClient, defaultCategoryIdentifiers, categoryProjectExtID); err != nil {
 		errorMsg := fmt.Errorf("error occurred while creating category spec for vm %s: %w", vmName, err)
 		if !isRetryableAPIError(err) {
@@ -2903,7 +2912,13 @@ func (r *NutanixMachineReconciler) assignAddressesToMachine(rctx *nctx.MachineCo
 
 func (r *NutanixMachineReconciler) getMachineCategoryIdentifiers(rctx *nctx.MachineContext) ([]*infrav1.NutanixCategoryIdentifier, error) {
 	log := ctrl.LoggerFrom(rctx.Context)
-	categoryIdentifiers := GetDefaultCAPICategoryIdentifiers(rctx.Cluster.Name)
+	categoryIdentifiers := GetDefaultCAPICategoryIdentifiers(logicalClusterOf(rctx.Cluster), rctx.Cluster.Name)
+	// Only try to create default categories. ignoring error so that we can return all including
+	// additionalCategories as well
+	_, err := GetOrCreateCategories(rctx.Context, rctx.ConvergedClient, categoryIdentifiers)
+	if err != nil {
+		log.Error(err, "Failed to getOrCreateCategories")
+	}
 
 	additionalCategories := rctx.NutanixMachine.Spec.AdditionalCategories
 	if len(additionalCategories) > 0 {
@@ -3183,4 +3198,13 @@ func (r *NutanixMachineReconciler) markClusterCategoryCreationFailed(rctx *nctx.
 		return fmt.Errorf("failed to patch ClusterCategoryCreatedCondition on NutanixCluster %s/%s: %w", rctx.NutanixCluster.Namespace, rctx.NutanixCluster.Name, err)
 	}
 	return nil
+}
+
+// credentials is where this reconciler reads Prism Central credentials from.
+func (r *NutanixMachineReconciler) credentials() credentialSource {
+	return credentialSource{
+		Reader:            r.CredentialReader,
+		SecretInformer:    r.SecretInformer,
+		ConfigMapInformer: r.ConfigMapInformer,
+	}
 }

@@ -27,7 +27,6 @@ import (
 	kapierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	apitypes "k8s.io/apimachinery/pkg/types"
 	kutilerrors "k8s.io/apimachinery/pkg/util/errors"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/utils/ptr"
@@ -42,6 +41,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -59,8 +59,12 @@ type NutanixClusterReconciler struct {
 	Client            client.Client
 	SecretInformer    coreinformers.SecretInformer
 	ConfigMapInformer coreinformers.ConfigMapInformer
-	Scheme            *runtime.Scheme
-	controllerConfig  *ControllerConfig
+	// CredentialReader, when set, reads Prism Central credentials through a
+	// cluster-aware client instead of the informers above. A fleet-wide setup
+	// must set it; see credentialSource.
+	CredentialReader ctlclient.Reader
+	Scheme           *runtime.Scheme
+	controllerConfig *ControllerConfig
 }
 
 func NewNutanixClusterReconciler(client client.Client, secretInformer coreinformers.SecretInformer, configMapInformer coreinformers.ConfigMapInformer, scheme *runtime.Scheme, copts ...ControllerConfigOpts) (*NutanixClusterReconciler, error) {
@@ -240,12 +244,12 @@ func (r *NutanixClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return reconcile.Result{}, err
 	}
 
-	v3Client, err := getPrismCentralClientForCluster(ctx, cluster, r.SecretInformer, r.ConfigMapInformer)
+	v3Client, err := getPrismCentralClientForCluster(ctx, cluster, r.credentials())
 	if err != nil {
 		log.Error(err, "error occurred while fetching prism central client")
 		return reconcile.Result{}, err
 	}
-	convergedClient, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, r.SecretInformer, r.ConfigMapInformer)
+	convergedClient, err := getPrismCentralConvergedV4ClientForCluster(ctx, cluster, r.credentials())
 	if err != nil {
 		log.Error(err, "error occurred while fetching prism central converged client")
 		return reconcile.Result{}, err
@@ -334,13 +338,6 @@ func (r *NutanixClusterReconciler) reconcileDelete(rctx *nctx.ClusterContext) (r
 	// Remove the finalizer from the NutanixCluster object
 	ctrlutil.RemoveFinalizer(rctx.NutanixCluster, infrav1.NutanixClusterFinalizer)
 	ctrlutil.RemoveFinalizer(rctx.NutanixCluster, infrav1.DeprecatedNutanixClusterFinalizer)
-
-	// Remove the workload cluster client from cache
-	clusterKey := apitypes.NamespacedName{
-		Namespace: rctx.Cluster.Namespace,
-		Name:      rctx.Cluster.Name,
-	}
-	nctx.RemoveRemoteClient(clusterKey)
 
 	return reconcile.Result{}, nil
 }
@@ -706,16 +703,37 @@ func (r *NutanixClusterReconciler) validateFailureDomainSpec(rctx *nctx.ClusterC
 	return nil
 }
 
-// reconcileCategoriesDelete deletes the default CAPX categories on cluster
-// delete; gated on the condition the machine reconciler sets when it first
-// creates them.
+func (r *NutanixClusterReconciler) reconcileCategories(rctx *nctx.ClusterContext) error {
+	log := ctrl.LoggerFrom(rctx.Context)
+	log.Info("Reconciling categories for cluster")
+	defaultCategories := GetDefaultCAPICategoryIdentifiers(logicalClusterOf(rctx.Cluster), rctx.Cluster.Name)
+	_, err := GetOrCreateCategories(rctx.Context, rctx.ConvergedClient, defaultCategories)
+	if err != nil {
+		v1beta1conditions.MarkFalse(rctx.NutanixCluster, infrav1.ClusterCategoryCreatedCondition, infrav1.ClusterCategoryCreationFailed, capiv1beta1.ConditionSeverityError, "%s", err.Error())
+		v1beta2conditions.Set(rctx.NutanixCluster, metav1.Condition{
+			Type:    string(infrav1.ClusterCategoryCreatedCondition),
+			Status:  metav1.ConditionFalse,
+			Reason:  infrav1.ClusterCategoryCreationFailed,
+			Message: err.Error(),
+		})
+		return err
+	}
+	v1beta1conditions.MarkTrue(rctx.NutanixCluster, infrav1.ClusterCategoryCreatedCondition)
+	v1beta2conditions.Set(rctx.NutanixCluster, metav1.Condition{
+		Type:   string(infrav1.ClusterCategoryCreatedCondition),
+		Status: metav1.ConditionTrue,
+		Reason: infrav1.Succeeded,
+	})
+	return nil
+}
+
 func (r *NutanixClusterReconciler) reconcileCategoriesDelete(rctx *nctx.ClusterContext) error {
 	log := ctrl.LoggerFrom(rctx.Context)
 	log.Info(fmt.Sprintf("Reconciling deletion of categories for cluster %s", rctx.Cluster.Name))
 	if v1beta1conditions.IsTrue(rctx.NutanixCluster, infrav1.ClusterCategoryCreatedCondition) ||
 		v1beta1conditions.GetReason(rctx.NutanixCluster, infrav1.ClusterCategoryCreatedCondition) == infrav1.DeletionFailed {
-		defaultCategories := GetDefaultCAPICategoryIdentifiers(rctx.Cluster.Name)
-		obsoleteCategories := GetObsoleteDefaultCAPICategoryIdentifiers(rctx.Cluster.Name)
+		defaultCategories := GetDefaultCAPICategoryIdentifiers(logicalClusterOf(rctx.Cluster), rctx.Cluster.Name)
+		obsoleteCategories := GetObsoleteDefaultCAPICategoryIdentifiers(logicalClusterOf(rctx.Cluster), rctx.Cluster.Name)
 
 		// Scope the category deletion to the project implied by the cluster's project
 		// policy, mirroring how categories were created during machine reconciliation.
@@ -974,4 +992,13 @@ func getPrismCentralCredentialRefForCluster(nutanixCluster *infrav1.NutanixClust
 		return nil, fmt.Errorf("cannot get credential reference if nutanix cluster object is nil")
 	}
 	return nutanixCluster.GetPrismCentralCredentialRef()
+}
+
+// credentials is where this reconciler reads Prism Central credentials from.
+func (r *NutanixClusterReconciler) credentials() credentialSource {
+	return credentialSource{
+		Reader:            r.CredentialReader,
+		SecretInformer:    r.SecretInformer,
+		ConfigMapInformer: r.ConfigMapInformer,
+	}
 }

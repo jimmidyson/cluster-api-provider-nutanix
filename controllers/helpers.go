@@ -41,7 +41,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	v1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/utils/ptr"
 	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1" //nolint:staticcheck // suppress complaining on Deprecated package
 	capiv1beta2 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -1519,20 +1518,37 @@ func GetSubnetUUIDList(ctx context.Context, client *v4Converged.Client, machineS
 }
 
 // GetDefaultCAPICategoryIdentifiers returns the default CAPI category identifiers
-func GetDefaultCAPICategoryIdentifiers(clusterName string) []*infrav1.NutanixCategoryIdentifier {
+//
+// The identifier is qualified by the logical cluster the Cluster was read from.
+// A category is what marks the resources CAPX owns, and it is keyed on the
+// cluster's name alone — which is unique per API server, not per Prism Central.
+// Two workspaces holding a cluster of the same name therefore address one
+// category, and on teardown one tenant's delete reaches the other tenant's
+// marker; nothing in CAPX prevents that, because deleteCategoryKeyValues
+// swallows the delete error Prism returns while VMs are still attached.
+//
+// An empty logical cluster leaves the identifier exactly as it was, so an
+// installation without kcp is unaffected.
+func GetDefaultCAPICategoryIdentifiers(logicalCluster, clusterName string) []*infrav1.NutanixCategoryIdentifier {
 	return []*infrav1.NutanixCategoryIdentifier{
 		{
 			Key:   infrav1.DefaultCAPICategoryKeyForName,
-			Value: clusterName,
+			Value: scopedName(logicalCluster, clusterName),
 		},
 	}
 }
 
 // GetObsoleteDefaultCAPICategoryIdentifiers returns the default CAPI category identifiers
-func GetObsoleteDefaultCAPICategoryIdentifiers(clusterName string) []*infrav1.NutanixCategoryIdentifier {
+//
+// Qualified as above. The obsolete form exists to clean up brownfield installs,
+// which by definition predate kcp: without a logical cluster this looks for
+// exactly the key it always did, and under kcp it looks for a qualified key
+// that no brownfield install ever wrote, which is the correct no-op rather
+// than a delete aimed at a key another workspace may share.
+func GetObsoleteDefaultCAPICategoryIdentifiers(logicalCluster, clusterName string) []*infrav1.NutanixCategoryIdentifier {
 	return []*infrav1.NutanixCategoryIdentifier{
 		{
-			Key:   fmt.Sprintf("%s%s", infrav1.ObsoleteDefaultCAPICategoryPrefix, clusterName),
+			Key:   fmt.Sprintf("%s%s", infrav1.ObsoleteDefaultCAPICategoryPrefix, scopedName(logicalCluster, clusterName)),
 			Value: infrav1.ObsoleteDefaultCAPICategoryOwnedValue,
 		},
 	}
@@ -2448,11 +2464,11 @@ func storageContainerInfoMatches(scInfo *converged.StorageContainerInfo, sc infr
 	}
 }
 
-func getPrismCentralClientForCluster(ctx context.Context, cluster *infrav1.NutanixCluster, secretInformer v1.SecretInformer, mapInformer v1.ConfigMapInformer) (*prismclientv3.Client, error) {
+func getPrismCentralClientForCluster(ctx context.Context, cluster *infrav1.NutanixCluster, creds credentialSource) (*prismclientv3.Client, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	log.V(1).Info("Get client helper")
-	clientHelper := nutanixclient.NewHelper(secretInformer, mapInformer)
+	clientHelper := creds.helper()
 
 	log.V(1).Info("Build management endpoint")
 	managementEndpoint, err := clientHelper.BuildManagementEndpoint(ctx, cluster)
@@ -2494,10 +2510,10 @@ func getPrismCentralClientForCluster(ctx context.Context, cluster *infrav1.Nutan
 	return v3Client, nil
 }
 
-func getPrismCentralConvergedV4ClientForCluster(ctx context.Context, cluster *infrav1.NutanixCluster, secretInformer v1.SecretInformer, mapInformer v1.ConfigMapInformer) (*v4Converged.Client, error) {
+func getPrismCentralConvergedV4ClientForCluster(ctx context.Context, cluster *infrav1.NutanixCluster, creds credentialSource) (*v4Converged.Client, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	clientHelper := nutanixclient.NewHelper(secretInformer, mapInformer)
+	clientHelper := creds.helper()
 	managementEndpoint, err := clientHelper.BuildManagementEndpoint(ctx, cluster)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("error occurred while getting management endpoint for cluster %q", cluster.GetNamespacedName()))

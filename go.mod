@@ -1,6 +1,6 @@
 module github.com/nutanix-cloud-native/cluster-api-provider-nutanix
 
-go 1.26.0
+go 1.26.3
 
 toolchain go1.26.4
 
@@ -214,11 +214,30 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiserver v0.37.1 // indirect
-	k8s.io/cluster-bootstrap v0.36.3 // indirect
+	k8s.io/cluster-bootstrap v0.37.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
+	sigs.k8s.io/multicluster-runtime v0.25.2
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+// Cluster API is consumed as an ordinary versioned dependency, resolved to
+// this project's patched fork, which carries the workspace-aware wiring this
+// provider is being ported onto.
+//
+// These replace directives do not propagate: Go honours replace only in the
+// main module, and the fork keeps the module path sigs.k8s.io/cluster-api.
+// Anything consuming this module must restate all three at matching versions,
+// or it resolves genuine upstream Cluster API instead.
+//
+// All three must move together: api/ and test/ are separate Go modules inside
+// the Cluster API repository, resolved by tag prefix, and a partial pin fails
+// at dependency resolution rather than at compile time.
+replace sigs.k8s.io/cluster-api => github.com/jimmidyson/cluster-api v1.15.0-kcp.13
+
+replace sigs.k8s.io/cluster-api/api => github.com/jimmidyson/cluster-api/api v1.15.0-kcp.13
+
+replace sigs.k8s.io/cluster-api/test => github.com/jimmidyson/cluster-api/test v1.15.0-kcp.13
